@@ -4,7 +4,7 @@
 import zipfile
 
 import pandas
-import numpy
+# import numpy
 
 # import wget
 import requests
@@ -65,6 +65,9 @@ class ParseRTLData:
          
         open(ZipFile_location, 'wb').write(myfile.content)
 
+        logger.info("Downloaded a new zip file.")
+
+
 
 
 
@@ -79,17 +82,28 @@ class ParseRTLData:
         # stops = pandas.read_csv(file, index_col='stop_id')
         stops = pandas.read_csv(file, index_col='stop_code')
 
+
+
+        row = stops.loc[stop_code, : ]
+
+        stopId_cellvalue = stops.loc[stop_code, : "stop_id" ].values[0]
+
+
+
         # stop = stops.index(stop_code)
         # stop = stops[stop_code == stop_code]
         # stop = stops[stop_code == 32752]
 
         # stop = numpy.where(stop_code == stop_code)
-        stop = numpy.where(stops == 32752)
+        # stop = numpy.where(stops == 32752)
 
-        logger.error(str(stops))
-        logger.error(str(stop))
-        logger.error(type(stop))
-        return "0"
+        # logger.error(str(stops))
+        # logger.error(str(row))
+        # logger.error(type(row))
+        logger.error(str(stopId_cellvalue))
+        logger.error(type(stopId_cellvalue))
+
+        return str(stopId_cellvalue)
         # logger.error("Response: %s" % (stop.stop_id))
         # return stop.stop_id
 
