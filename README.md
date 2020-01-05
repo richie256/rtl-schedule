@@ -1,6 +1,6 @@
 # richie256/rtl-schedule
 
-https://github.com/richie256/rtl-schedule/workflows/Docker%20Images%20CI/badge.svg
+![ci workflow](https://github.com/richie256/rtl-schedule/workflows/Docker%20Images%20CI/badge.svg)
 ![image size](https://img.shields.io/microbadger/image-size/richie256/rtl-schedule.svg)
 ![layers](https://img.shields.io/microbadger/layers/richie256/rtl-schedule.svg)
 ![docker pulls](https://img.shields.io/docker/pulls/richie256/rtl-schedule.svg)
