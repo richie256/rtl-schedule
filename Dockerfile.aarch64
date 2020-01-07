@@ -1,5 +1,9 @@
 FROM python:3.7-alpine
 
+RUN apk add --update \
+    curl \
+    && rm -rf /var/cache/apk/*
+
 RUN \
     export QEMU_USER_STATIC_LATEST_TAG=$(curl -s https://api.github.com/repos/multiarch/qemu-user-static/tags \
         | grep 'name.*v[0-9]' | head -n 1 | cut -d '"' -f 4) && \
