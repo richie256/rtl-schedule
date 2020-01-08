@@ -2,7 +2,7 @@ FROM multiarch/qemu-user-static:x86_64-arm as qemu
 FROM python:3.7-alpine
 
 
-COPY --from=qemu /usr/bin/qemu-aarch64-static /usr/bin
+COPY --from=qemu /usr/bin/qemu-arm-static /usr/bin
 
 ARG TARGETPLATFORM
 RUN echo "I'm building for $TARGETPLATFORM"
