@@ -1,6 +1,9 @@
 FROM python:3
 #FROM python:3-onbuild
 
+ARG TARGETPLATFORM
+RUN echo "I'm building for $TARGETPLATFORM"
+
 COPY . /usr/src/app
 WORKDIR /usr/src/app
 ENV TZ=America/Montreal

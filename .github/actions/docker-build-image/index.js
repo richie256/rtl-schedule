@@ -20,8 +20,11 @@ const exec = require('../.modules/@actions/exec');
             `--build-arg=BUILD_DATE=${new Date().toISOString()}`,
             `--build-arg=VCS_REF=${process.env.GITHUB_SHA.slice(0, 7)}`,
             `--tag=${image}:${tag}`,
+            // `--platform=${architecture},`
             '--no-cache'
         ]);
+
+        await exec.exec(`docker version -f '{{.Server.Experimental}}`);
 
         await exec.exec(`docker push ${image}:${tag}`);
 
