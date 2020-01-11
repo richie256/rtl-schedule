@@ -12,10 +12,12 @@ Return the time and info of the next bus for a giving bus-stop of the RTL.
 # TODO List
 
 - [x] Finalize the coding.
-- [ ] Fully test GitHub Automated actions.
-- [ ] Add 24h expiration for the zip file.
+- [x] Fully test GitHub Automated actions.
+- [x] Create a Docker container registry.
+- [x] Add 24h expiration for the zip file.
+- [ ] Observed a problem with current datetime in Docker Raspberry Pi.
+- [ ] Create light mode for Raspberry Pi-friendly.
 - [ ] Indicate how to find a stop code.
-- [ ] Create a Docker container registry.
 - [ ] Sometimes, the rage of date in the file `calendar.txt` in the current zip file is in the future.
 
 ## Supported Architectures
@@ -33,11 +35,13 @@ The architectures supported by this image are:
 
 ### Create and start the container
 
+```
 docker run -d \
     --name=rtl-schedule \
     -p <EXTERNAL_PORT>:80 \
     --restart unless-stopped \
     richie256/rtl-schedule
+```
 
 ### Container configuration parameters
 
@@ -45,7 +49,8 @@ Refer to the following table for parameters available to the container images:
 
 | Parameter | Required | Description |
 | :----: | --- | --- |
-| `-p <EXTERNAL_PORT>:80` | <div align="center">✔</div> | Publish the container's `80` internal port to the host as `<EXTERNAL_PORT>`.<br>This is necessary for the Authentication process (more on that below). |
+| `-p <EXTERNAL_PORT>:80` | <div align="center">✔</div> | Publish the container's `80` internal port to the host as `<EXTERNAL_PORT>`. |
+
 
 ### How to call the application
 
@@ -61,5 +66,6 @@ Command line parameters:
 ## Notes
 
 http://calculateur.rtl-longueuil.qc.ca/taz/rtl/horaire.php?l=44&t=32752&d=AA&date=20191104
+
 http://calculateur.rtl-longueuil.qc.ca/taz/rtl/horaire.php?l=144&t=32752&d=AA&date=20191104
 

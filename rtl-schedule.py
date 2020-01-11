@@ -13,6 +13,11 @@ from flask_restful import Resource, Api
 
 import logging
 
+import datetime
+
+from util import settings_from_file
+
+
 # create logger with 'rtl-schedule'
 logger = logging.getLogger('rtl-schedule')
 
@@ -35,26 +40,50 @@ app = Flask(__name__)
 api = Api(app)
 
 
+def get_modification_date(path: str):
+
+    # Return epoch time, in UTC offset 0
+    epoch = os.path.getmtime(path)
+
+    return datetime.datetime.fromtimestamp(epoch).strftime('%c')
+
+
+def is_file_expired(path: str) -> bool:
+    """Checks if the file is expired. Use the last modification date if the file."""
+
+    if not (os.path.isfile(path)):
+        return True
+
+    modification_date = get_modification_date(path)
+    current_date = datetime.datetime.now('UTC')
+
+    delta = current_date - modification_date
+    return delta.hour >= 24
+
+
 class ParseRTLData:
 
     def __init__(self, schedule_zipfile='gtfs.zip'):
 
         file = os.getcwd() + '/' + schedule_zipfile
 
-        if not (os.path.isfile(file)):
+        # If the file doesn't exists or it is expired, download a new file.
+        if not (os.path.isfile(file)) or is_file_expired(file):
             self.download_gtfs_file(file)
             logger.info("Downloaded a new zip file.")
 
-        self.schedule_zipfile = schedule_zipfile
+            self.schedule_zipfile = schedule_zipfile
 
-    def download_gtfs_file(self, zipfile_location) -> None:
+    @staticmethod
+    def download_gtfs_file(zipfile_location) -> None:
 
         """ Download the GTFS file from the website, write it on disk. """
 
         input_url = "http://www.rtl-longueuil.qc.ca/transit/latestfeed/RTL.zip"
         my_file = requests.get(input_url, allow_redirects=True)
 
-        open(zipfile_location, 'wb').write(my_file.content)
+        my_zip = open(zipfile_location, 'wb').write(my_file.content)
+        my_zip.close()
 
     def get_stop_id(self, stop_code: int) -> int:
 
