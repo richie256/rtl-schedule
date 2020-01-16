@@ -15,6 +15,7 @@ Return the time and info of the next bus for a giving bus-stop of the RTL.
 - [x] Fully test GitHub Automated actions.
 - [x] Create a Docker container registry.
 - [x] Add 24h expiration for the zip file.
+- [ ] Add MQTT functionnality.
 - [ ] Observed a problem with current datetime in Docker Raspberry Pi.
 - [ ] Create light mode for Raspberry Pi-friendly.
 - [ ] Indicate how to find a stop code.
