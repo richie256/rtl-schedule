@@ -31,6 +31,7 @@ The architectures supported by this image are:
 | :----: | --- |
 | x86-64 | `amd64-latest` |
 | armhf | `arm32v7-latest` |
+| arm64 | `arm64v8-latest` |
 
 ## Usage
 
@@ -50,6 +51,7 @@ Refer to the following table for parameters available to the container images:
 
 | Parameter | Required | Description |
 | :----: | --- | --- |
+| `-e RTL_MODE=<mode>` | | Supported mode: JSON for JSON MS, MQTT. |
 | `-p <EXTERNAL_PORT>:80` | <div align="center">✔</div> | Publish the container's `80` internal port to the host as `<EXTERNAL_PORT>`. |
 
 
@@ -63,6 +65,34 @@ Command line parameters:
 | :----: | --- |
 | `<STOP_CODE>` | Your desired stop code.
 
+
+# MQTT DAEMON
+
+Here is all the environment variables required if you use the MQTT output.
+
+| Parameter | Required | Description |
+| :----: | --- | --- |
+| `-e RTL_STOP_CODE=stop_code` | <div align="center">✔</div> | RTL stop code. |
+| `-e RTL_MODE=MQTT` | <div align="center">✔</div> | Specify the MQTT mode. |
+| `-e MQTT_HOST=<mqtt host>` | <div align="center">✔</div> | Host of your MQTT broker. |
+| `-e MQTT_PORT=<mqtt port>` | | Port of your MQTT broker. It will default to 1883 if not specified. |
+| `-e MQTT_USERNAME=<mqtt username>` | | Your MQTT username. |
+| `-e MQTT_PASSWORD=<mqtt password>` | | Your MQTT password. |
+
+### How to call the mqtt deamon
+
+```
+docker run -d \
+    --name=rtl-schedule \
+    -e RTL_MODE=MQTT \
+    -e RTL_STOP_CODE=99999 \
+    -e MQTT_HOST=raspberrypi.local \
+    -e MQTT_PORT=1883 \
+    -e MQTT_USERNAME=username \
+    -e MQTT_PASSWORD=password \
+    --restart unless-stopped \
+    richie256/rtl-schedule
+```
 
 ## Notes
 

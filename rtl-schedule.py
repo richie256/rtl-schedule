@@ -1,27 +1,30 @@
 import zipfile
-import pandas
+from pandas import read_csv, to_datetime
 
 import requests
-
-import datetime
 
 import os
 import os.path
 
+import time
+
 from flask import Flask, jsonify
 from flask_restful import Resource, Api
+
+import paho.mqtt.publish as publish
 
 import logging
 
 import datetime
 
-from util import settings_from_file
+from const import _LOGGER, RTL_MQTT_MODE, RTL_JSON_MS_MODE
 
+from util import is_file_expired
 
 # create logger with 'rtl-schedule'
-logger = logging.getLogger('rtl-schedule')
+# logger = logging.getLogger('rtl-schedule')
 
-logger.setLevel(logging.DEBUG)
+_LOGGER.setLevel(logging.DEBUG)
 # create file handler which logs even debug messages
 fh = logging.FileHandler('rtl-schedule.log')
 fh.setLevel(logging.DEBUG)
@@ -33,46 +36,33 @@ formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(messag
 fh.setFormatter(formatter)
 ch.setFormatter(formatter)
 # add the handlers to the logger
-logger.addHandler(fh)
-logger.addHandler(ch)
+_LOGGER.addHandler(fh)
+_LOGGER.addHandler(ch)
 
 app = Flask(__name__)
 api = Api(app)
 
+auth = None
+if os.environ.get('MQTT_USER') is not None and os.environ.get('MQTT_PASSWORD') is not None:
+    auth = {'username': os.environ.get('MQTT_USER'), 'password': os.environ.get('MQTT_PASSWORD')}
 
-def get_modification_date(path: str):
-
-    # Return epoch time, in UTC offset 0
-    epoch = os.path.getmtime(path)
-
-    return datetime.datetime.fromtimestamp(epoch).strftime('%c')
-
-
-def is_file_expired(path: str) -> bool:
-    """Checks if the file is expired. Use the last modification date if the file."""
-
-    if not (os.path.isfile(path)):
-        return True
-
-    modification_date = get_modification_date(path)
-    current_date = datetime.datetime.now('UTC')
-
-    delta = current_date - modification_date
-    return delta.hour >= 24
+run_mode = None
+if os.environ.get('RTL_MODE') is not None and os.environ.get('RTL_MODE').lower() == RTL_MQTT_MODE:
+    run_mode = RTL_MQTT_MODE
+else:
+    run_mode = RTL_JSON_MS_MODE
 
 
 class ParseRTLData:
-
     def __init__(self, schedule_zipfile='gtfs.zip'):
 
         file = os.getcwd() + '/' + schedule_zipfile
+        self.schedule_zipfile = schedule_zipfile
 
         # If the file doesn't exists or it is expired, download a new file.
         if not (os.path.isfile(file)) or is_file_expired(file):
             self.download_gtfs_file(file)
-            logger.info("Downloaded a new zip file.")
-
-            self.schedule_zipfile = schedule_zipfile
+            _LOGGER.info("Downloaded a new zip file.")
 
     @staticmethod
     def download_gtfs_file(zipfile_location) -> None:
@@ -82,8 +72,24 @@ class ParseRTLData:
         input_url = "http://www.rtl-longueuil.qc.ca/transit/latestfeed/RTL.zip"
         my_file = requests.get(input_url, allow_redirects=True)
 
-        my_zip = open(zipfile_location, 'wb').write(my_file.content)
+        my_zip = open(zipfile_location, 'wb')
+        my_zip.write(my_file.content)
         my_zip.close()
+
+    # def prepare_stop_gtfs_file(self, stop_id: int) -> None:
+    #     """ Prepare a GTFS file for a specific stop id."""
+    #
+    #     self.stop_id_file = 'gtfs_' + str(stop_id) + '.zip'
+    #
+    #     if not os.path.isfile(self.stop_id_file) or is_file_expired(self.stop_id_file):
+    #         pass
+    #
+    #     is_file_expired
+    #
+    #     # Check if exists
+    #     pass
+    #
+    #     return
 
     def get_stop_id(self, stop_code: int) -> int:
 
@@ -91,7 +97,7 @@ class ParseRTLData:
 
         with zipfile.ZipFile(self.schedule_zipfile) as my_zip:
             with my_zip.open('stops.txt') as my_file:
-                stops = pandas.read_csv(my_file, index_col='stop_code')
+                stops = read_csv(my_file, index_col='stop_code')
 
         stop_id_cell_value = stops.loc[stop_code, : "stop_id"].values[0]
 
@@ -108,7 +114,7 @@ class ParseRTLData:
 
         with zipfile.ZipFile(self.schedule_zipfile) as myzip:
             with myzip.open('calendar.txt') as myfile:
-                dataframe = pandas.read_csv(myfile)
+                dataframe = read_csv(myfile)
 
         for index, row in dataframe.iterrows():
 
@@ -156,14 +162,14 @@ class ParseRTLData:
         with zipfile.ZipFile(self.schedule_zipfile) as my_zip:
 
             with my_zip.open('stop_times.txt') as my_file1:
-                stop_times = pandas.read_csv(my_file1, index_col='stop_id')
+                stop_times = read_csv(my_file1, index_col='stop_id')
 
             # Only keep rows where stop_id is our stop_id.
             # Note using [[ ]] returns a DataFrame.
             stop_times = stop_times.loc[[stop_id, ]]
 
             with my_zip.open('trips.txt') as my_file2:
-                trips = pandas.read_csv(my_file2)
+                trips = read_csv(my_file2)
 
         results = stop_times.merge(trips, how='left', on='trip_id', validate='many_to_one')
 
@@ -198,7 +204,7 @@ class ParseRTLData:
 
             today_results.at[index, 'arrival_datetime'] = row_datetime
 
-        today_results['arrival_datetime'] = pandas.to_datetime(today_results.arrival_datetime)
+        today_results['arrival_datetime'] = to_datetime(today_results.arrival_datetime)
 
         today_results = today_results.sort_values(by=['arrival_datetime'])
 
@@ -220,7 +226,7 @@ class ParseRTLData:
 
 
 class RtlScheduleNextStop(Resource):
-    """ Get the next stop informations in JSON format. """
+    """ Get the next stop information in JSON format. """
 
     def get(self, stop_code):
         rtl_data = ParseRTLData(schedule_zipfile='gtfs.zip')
@@ -246,7 +252,116 @@ class RtlScheduleNextStop(Resource):
         return jsonify(result)
 
 
-api.add_resource(RtlScheduleNextStop, '/rtl_schedule/nextstop/<int:stop_code>')
+def send_mqtt(topic, payload, host: str, port: int):
+    try:
+        publish.single(topic, payload=payload, qos=0, hostname=host,
+                       port=port, auth=auth)
+    except Exception as ex:
+        _LOGGER.info("MQTT Publish Failed: " + str(ex))
+
+
+class RtlScheduleNextStopMQTT:
+
+    def __init__(self, stop_code: int):
+        self.rtl_data = ParseRTLData(schedule_zipfile='gtfs.zip')
+
+        self.stop_code = stop_code
+        self.next_stop_row = None
+        self.nbr_minutes = None
+        self.nbr_seconds = None
+
+        self.stop_id = self.rtl_data.get_stop_id(self.stop_code)
+
+        # Retrieve the next stop information from now
+        self.current_datetime = datetime.datetime.now().replace(microsecond=0)
+
+    def retrieve(self):
+        self.next_stop_row = self.rtl_data.get_next_stop(self.stop_id, self.current_datetime)
+
+        difference = self.next_stop_row.arrival_datetime - self.current_datetime
+        seconds_in_day = 24 * 60 * 60
+        self.nbr_minutes, self.nbr_seconds = divmod(difference.days * seconds_in_day + difference.seconds, 60)
+
+    def publish(self, host: str, port: int):
+        send_mqtt(
+            'schedule/bus_stop/' + str(self.stop_code) + '/current_datetime',
+            '%s' % self.current_datetime,
+            host,
+            port
+        )
+
+        send_mqtt(
+            'schedule/bus_stop/' + str(self.stop_code) + '/arrival_time',
+            '%s' % self.next_stop_row.arrival_time,
+            host,
+            port
+        )
+
+        send_mqtt(
+            'schedule/bus_stop/' + str(self.stop_code) + '/nextstop_nbrmins',
+            '%s' % self.nbr_minutes,
+            host,
+            port
+        )
+
+        send_mqtt(
+            'schedule/bus_stop/' + str(self.stop_code) + '/nextstop_nbrsecs',
+            '%s' % self.nbr_seconds,
+            host,
+            port
+        )
+
+        send_mqtt(
+            'schedule/bus_stop/' + str(self.stop_code) + '/route_id',
+            '%s' % self.next_stop_row.route_id,
+            host,
+            port
+        )
+
+        send_mqtt(
+            'schedule/bus_stop/' + str(self.stop_code) + '/trip_headsign',
+            '%s' % self.next_stop_row.trip_headsign,
+            host,
+            port
+        )
+
+    # send data to MQTT broker defined in settings
+
+
+if run_mode == RTL_JSON_MS_MODE:
+    api.add_resource(RtlScheduleNextStop, '/rtl_schedule/nextstop/<int:stop_code>')
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=80, debug=True)
+    if run_mode == RTL_JSON_MS_MODE:
+        app.run(host='0.0.0.0', port=80, debug=True)
+
+    if run_mode == RTL_MQTT_MODE:
+        _LOGGER.info("MQTT mode...")
+        mqtt_host = os.environ.get('MQTT_HOST')
+        if os.environ.get('MQTT_PORT') is None:
+            mqtt_port = 1883
+        else:
+            mqtt_port = int(os.environ.get('MQTT_PORT'))
+
+        stop_code = None
+
+        if os.environ.get('RTL_STOP_CODE') is not None:
+            stop_code = int(os.environ.get('RTL_STOP_CODE'))
+            _LOGGER.info("stop_code: " + str(stop_code))
+        else:
+            # TODO: Raise something.
+            _LOGGER.info("Unexpected...")
+            pass
+
+        while True:
+            _LOGGER.info("Initializing...")
+            rtl_mqtt = RtlScheduleNextStopMQTT(stop_code)
+
+            _LOGGER.info("Retrieve...")
+            rtl_mqtt.retrieve()
+
+            _LOGGER.info("Publish...")
+            rtl_mqtt.publish(mqtt_host, mqtt_port)
+            _LOGGER.info("Publish completed")
+
+            time.sleep(20)
