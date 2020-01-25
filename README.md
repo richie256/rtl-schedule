@@ -15,7 +15,7 @@ Return the time and info of the next bus for a giving bus-stop of the RTL.
 - [x] Fully test GitHub Automated actions.
 - [x] Create a Docker container registry.
 - [x] Add 24h expiration for the zip file.
-- [ ] Add MQTT functionnality.
+- [x] Add MQTT functionality.
 - [ ] Observed a problem with current datetime in Docker Raspberry Pi.
 - [ ] Create light mode for Raspberry Pi-friendly.
 - [ ] Indicate how to find a stop code.
@@ -23,7 +23,7 @@ Return the time and info of the next bus for a giving bus-stop of the RTL.
 
 ## Supported Architectures
 
-This image supports multiple architectures such as `x86-64` and `armhf`. Simply pulling `richie256/rtl-schedule` should retrieve the correct image for your architecture, but you can always pull specific architecture images via tags.
+This image supports multiple architectures such as `x86-64`, `armhf` and `arm64`. Simply pulling `richie256/rtl-schedule` should retrieve the correct image for your architecture, but you can always pull specific architecture images via tags.
 
 The architectures supported by this image are:
 

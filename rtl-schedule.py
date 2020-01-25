@@ -42,10 +42,6 @@ _LOGGER.addHandler(ch)
 app = Flask(__name__)
 api = Api(app)
 
-auth = None
-if os.environ.get('MQTT_USER') is not None and os.environ.get('MQTT_PASSWORD') is not None:
-    auth = {'username': os.environ.get('MQTT_USER'), 'password': os.environ.get('MQTT_PASSWORD')}
-
 run_mode = None
 if os.environ.get('RTL_MODE') is not None and os.environ.get('RTL_MODE').lower() == RTL_MQTT_MODE:
     run_mode = RTL_MQTT_MODE
@@ -252,7 +248,7 @@ class RtlScheduleNextStop(Resource):
         return jsonify(result)
 
 
-def send_mqtt(topic, payload, host: str, port: int):
+def send_mqtt(topic, payload, host: str, port: int, auth):
     try:
         publish.single(topic, payload=payload, qos=0, hostname=host,
                        port=port, auth=auth)
@@ -282,47 +278,55 @@ class RtlScheduleNextStopMQTT:
         seconds_in_day = 24 * 60 * 60
         self.nbr_minutes, self.nbr_seconds = divmod(difference.days * seconds_in_day + difference.seconds, 60)
 
-    def publish(self, host: str, port: int):
-        send_mqtt(
-            'schedule/bus_stop/' + str(self.stop_code) + '/current_datetime',
-            '%s' % self.current_datetime,
-            host,
-            port
-        )
+    def publish(self, host: str, port: int, authentication):
+        _LOGGER.info("publish({}, {}, {})".format(host, port, authentication))
 
         send_mqtt(
             'schedule/bus_stop/' + str(self.stop_code) + '/arrival_time',
-            '%s' % self.next_stop_row.arrival_time,
+            '{}'.format(self.next_stop_row.arrival_time),
             host,
-            port
+            port,
+            authentication
+        )
+
+        send_mqtt(
+            'schedule/bus_stop/' + str(self.stop_code) + '/current_datetime',
+            '{}'.format(self.current_datetime),
+            host,
+            port,
+            authentication
         )
 
         send_mqtt(
             'schedule/bus_stop/' + str(self.stop_code) + '/nextstop_nbrmins',
-            '%s' % self.nbr_minutes,
+            '{}'.format(self.nbr_minutes),
             host,
-            port
+            port,
+            authentication
         )
 
         send_mqtt(
             'schedule/bus_stop/' + str(self.stop_code) + '/nextstop_nbrsecs',
-            '%s' % self.nbr_seconds,
+            '{}'.format(self.nbr_seconds),
             host,
-            port
+            port,
+            authentication
         )
 
         send_mqtt(
             'schedule/bus_stop/' + str(self.stop_code) + '/route_id',
-            '%s' % self.next_stop_row.route_id,
+            '{}'.format(self.next_stop_row.route_id),
             host,
-            port
+            port,
+            authentication
         )
 
         send_mqtt(
             'schedule/bus_stop/' + str(self.stop_code) + '/trip_headsign',
-            '%s' % self.next_stop_row.trip_headsign,
+            '{}'.format(self.next_stop_row.trip_headsign),
             host,
-            port
+            port,
+            authentication
         )
 
     # send data to MQTT broker defined in settings
@@ -353,15 +357,14 @@ if __name__ == '__main__':
             _LOGGER.info("Unexpected...")
             pass
 
+        auth = None
+        if os.environ.get('MQTT_USERNAME') is not None and os.environ.get('MQTT_PASSWORD') is not None:
+            auth = {'username': os.environ.get('MQTT_USERNAME'), 'password': os.environ.get('MQTT_PASSWORD')}
+
         while True:
-            _LOGGER.info("Initializing...")
             rtl_mqtt = RtlScheduleNextStopMQTT(stop_code)
 
-            _LOGGER.info("Retrieve...")
             rtl_mqtt.retrieve()
-
-            _LOGGER.info("Publish...")
-            rtl_mqtt.publish(mqtt_host, mqtt_port)
-            _LOGGER.info("Publish completed")
+            rtl_mqtt.publish(mqtt_host, mqtt_port, auth)
 
             time.sleep(20)
