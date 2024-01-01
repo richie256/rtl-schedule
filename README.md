@@ -17,7 +17,7 @@ Return the time and info of the next bus for a giving bus-stop of the RTL.
 - [x] Add 24h expiration for the zip file.
 - [x] Add MQTT functionality.
 - [ ] Observed a problem with current datetime in Docker Raspberry Pi.
-- [ ] Create light mode for Raspberry Pi-friendly.
+- [ ] Create lite mode for Raspberry Pi-friendly.
 - [ ] Indicate how to find a stop code.
 - [ ] Sometimes, the rage of date in the file `calendar.txt` in the current zip file is in the future.
 
@@ -40,7 +40,7 @@ The architectures supported by this image are:
 ```
 docker run -d \
     --name=rtl-schedule \
-    -p <EXTERNAL_PORT>:80 \
+    -e 80:80 \
     --restart unless-stopped \
     richie256/rtl-schedule
 ```
@@ -49,10 +49,10 @@ docker run -d \
 
 Refer to the following table for parameters available to the container images:
 
-| Parameter | Required | Description |
-| :----: | --- | --- |
-| `-e RTL_MODE=<mode>` | | Supported mode: JSON for JSON MS, MQTT. |
-| `-p <EXTERNAL_PORT>:80` | <div align="center">✔</div> | Publish the container's `80` internal port to the host as `<EXTERNAL_PORT>`. |
+|       Parameter       | Required | Description |
+|:---------------------:| --- | --- |
+| `-e RTL_MODE=<mode>`  | | Supported mode: JSON for JSON MS, MQTT. |
+| `-e EXTERNAL_PORT:80` | <div align="center">✔</div> | Publish the container's `80` internal port to the host as `EXTERNAL_PORT`. |
 
 
 ### How to call the application
@@ -65,6 +65,21 @@ Command line parameters:
 | :----: | --- |
 | `<STOP_CODE>` | Your desired stop code.
 
+
+# Build locally
+
+Build
+``` bash
+docker build -t rtl-schedule:local .
+```
+
+``` bash
+docker run -d \
+    --name=rtl-schedule \
+    -p <EXTERNAL_PORT>:80 \
+    --restart unless-stopped \
+    rtl-schedule:local
+```
 
 # MQTT DAEMON
 
