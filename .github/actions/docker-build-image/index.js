@@ -9,8 +9,10 @@ const exec = require('../.modules/@actions/exec');
         const gitRepo = process.env.GITHUB_REPOSITORY.split('/');
         const gitRef = process.env.GITHUB_REF.split('/').pop();
         const gitTag = gitRef.match(/^v((?:\.?\d+)+(?:-.+)?)$/);
+        const owner = process.env.GITHUB_REPOSITORY_OWNER;
 
-        const image = `${gitRepo[0]}/${gitRepo[1].replace('docker-', '')}`;
+        // const image = `${gitRepo[0]}/${gitRepo[1].replace('docker-', '')}`;
+        const image = `${owner}/${gitRepo[1].replace('docker-', '')}`;
         const tag = `${architecture}-${gitTag ? gitTag[1] : gitRef}`;
 
         await exec.exec('docker run --rm --privileged multiarch/qemu-user-static:register --reset');
