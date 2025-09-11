@@ -58,7 +58,7 @@ class ParseRTLData:
         # If the file doesn't exists or it is expired, download a new file.
         if not (os.path.isfile(file)) or is_file_expired(file):
             self.download_gtfs_file(file)
-            _LOGGER.info("Downloaded a new zip file.")
+            _LOGGER.info("Downloaded a new zip file. from [http://www.rtl-longueuil.qc.ca/transit/latestfeed/RTL.zip]")
 
     @staticmethod
     def download_gtfs_file(zipfile_location) -> None:
@@ -148,6 +148,7 @@ class ParseRTLData:
     def get_next_stop(self, stop_id: int, parm_datetime):
 
         """Retrieve the next stop information"""
+        _LOGGER.info("Retrieve the next stop information. get_next_stop({}, {})".format(stop_id, parm_datetime.date()))
 
         today_service_id = self.get_service_id(parm_datetime.date())
 
@@ -194,6 +195,8 @@ class ParseRTLData:
             time_h = int(row_time_str[:2])
             time_m = int(row_time_str[3:5])
             time_s = int(row_time_str[6:8])
+
+            _LOGGER.info("Parsing date row_time_str: {}".format(row_time_str))
 
             row_time = datetime.time(hour=time_h, minute=time_m, second=time_s)
             row_datetime = datetime.datetime.combine(row_date, row_time)

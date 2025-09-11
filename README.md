@@ -40,7 +40,7 @@ The architectures supported by this image are:
 ```
 docker run -d \
     --name=rtl-schedule \
-    -e 80:80 \
+    -p 80:80 \
     --restart unless-stopped \
     richie256/rtl-schedule
 ```
