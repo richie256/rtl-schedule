@@ -13,7 +13,7 @@ const exec = require('../.modules/@actions/exec');
 
         // const image = `${gitRepo[0]}/${gitRepo[1].replace('docker-', '')}`;
         const image = `${owner}/${gitRepo[1].replace('docker-', '')}`;
-        const tag = `${architecture}-${gitTag ? gitTag[1] : gitRef}`;
+        const tag = `${architecture.replace('linux/', '')}-${gitTag ? gitTag[1] : gitRef}`;
 
         await exec.exec('docker run --rm --privileged multiarch/qemu-user-static:register --reset');
 
