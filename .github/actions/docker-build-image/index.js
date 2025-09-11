@@ -15,10 +15,11 @@ const exec = require('../.modules/@actions/exec');
 
         await exec.exec('docker run --rm --privileged multiarch/qemu-user-static:register --reset');
 
-        await exec.exec('docker build .', [
+        await exec.exec('docker buildx build .', [
             `--file=${dockerfile}`,
             `--build-arg=BUILD_DATE=${new Date().toISOString()}`,
             `--build-arg=VCS_REF=${process.env.GITHUB_SHA.slice(0, 7)}`,
+            `--platform linux/arm/v7`,
             `--tag=${image}:${tag}`,
             // `--platform=${architecture},`
             '--no-cache'
