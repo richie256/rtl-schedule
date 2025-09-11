@@ -20,13 +20,14 @@ jobs:
       matrix:
         architecture:
           - linux/amd64
-          - linux/arm64
+          - linux/arm64/v8
+
         include:
           - architecture: linux/amd64
             dockerfile: Dockerfile
           # - architecture: arm32v7
             # dockerfile: Dockerfile.armhf
-          - architecture: linux/arm64
+          - architecture: linux/arm64/v8
             dockerfile: Dockerfile.aarch64
 
     steps:
