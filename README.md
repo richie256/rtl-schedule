@@ -57,7 +57,7 @@ Refer to the following table for parameters available to the container images:
 
 ### How to call the application
 
-`curl http://localhost:<EXTERNAL_PORT>/rtl_schedule/nextstop/<STOP_CODE>`
+`curl http://localhost:80/rtl_schedule/nextstop/123`
 
 Command line parameters:
 

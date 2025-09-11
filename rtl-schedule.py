@@ -198,8 +198,12 @@ class ParseRTLData:
 
             _LOGGER.info("Parsing date row_time_str: {}".format(row_time_str))
 
-            row_time = datetime.time(hour=time_h, minute=time_m, second=time_s)
-            row_datetime = datetime.datetime.combine(row_date, row_time)
+            try:
+                row_time = datetime.time(hour=time_h, minute=time_m, second=time_s)
+                row_datetime = datetime.datetime.combine(row_date, row_time)
+            except ValueError:
+                _LOGGER.info("Invalid time/date detected in RSS data {}{}, ignoring them.".format(row_time_str, row_date))
+                continue
 
             today_results.at[index, 'arrival_datetime'] = row_datetime
 

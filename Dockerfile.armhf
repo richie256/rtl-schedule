@@ -1,7 +1,6 @@
 FROM multiarch/qemu-user-static:x86_64-arm as qemu
 
-FROM registry.hub.docker.com/arm32v7/python:3.13-alpine
-#FROM python:3.12-alpine
+FROM arm32v7/python:3.13-alpine
 
 COPY --from=qemu /usr/bin/qemu-arm-static /usr/bin
 
