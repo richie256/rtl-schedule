@@ -25,7 +25,7 @@ jobs:
           context: .
           platforms: linux/${{ matrix.architecture }}
           push: true
-          tags: your-repo/your-image:latest-${{ matrix.architecture }}
+          tags: richie256/rtl-schedule:latest-${{ matrix.architecture }}
 
   create-manifest:
     needs: build
@@ -43,6 +43,6 @@ jobs:
       - name: Create multi-arch manifest
         run: |
           docker buildx imagetools create \
-            your-repo/your-image:latest \
-            your-repo/your-image:latest-amd64 \
-            your-repo/your-image:latest-arm64
+            richie256/rtl-schedule:latest \
+            richie256/rtl-schedule:latest-amd64 \
+            richie256/rtl-schedule:latest-arm64
