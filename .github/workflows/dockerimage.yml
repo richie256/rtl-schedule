@@ -103,13 +103,13 @@ jobs:
           cache-to: type=gha,mode=max
 
 
-      - name: Create and publish manifest list
-        uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09 # v5.0.0
-        uses: ./.github/actions/docker-create-manifest
-        env:
-          DOCKER_CLI_EXPERIMENTAL: enabled
-        with:
-          multiarch: '["amd64", "arm32v7", "arm64v8"]'
+      # - name: Create and publish manifest list
+      #   uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09 # v5.0.0
+      #   uses: ./.github/actions/docker-create-manifest
+      #   env:
+      #     DOCKER_CLI_EXPERIMENTAL: enabled
+      #   with:
+      #     multiarch: '["amd64", "arm32v7", "arm64v8"]'
 
 
 
