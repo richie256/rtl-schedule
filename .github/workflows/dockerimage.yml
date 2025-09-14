@@ -52,7 +52,7 @@ jobs:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-          
+
 
       # # Login against a Docker registry except on PR
       # # https://github.com/docker/login-action
@@ -78,7 +78,7 @@ jobs:
         uses: docker/metadata-action@96383f45573cb7f253c731d3b3ab81c87ef81934 # v5.0.0
         with:
           # images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          images: ghcr.io/richie256/docker-rtl-schedule
+          images: ghcr.io/richie256/rtl-schedule
 
 
       # Build and push Docker image with Buildx (don't push on PR)
