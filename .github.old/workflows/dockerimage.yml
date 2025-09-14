@@ -1,0 +1,107 @@
+name: Docker Images CI
+
+on: [push]
+# on: 
+#   push:
+#     branches:
+#       - preview
+#     tags:
+#       - 'v*'
+jobs:
+
+  build-images:
+
+    name: Build '${{ matrix.architecture }}' image
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        architecture:
+          - linux/amd64
+          - linux/arm64/v8
+
+        include:
+          - architecture: linux/amd64
+            dockerfile: Dockerfile
+          - architecture: arm32v7
+            dockerfile: Dockerfile.armhf
+          - architecture: linux/arm64/v8
+            dockerfile: Dockerfile.aarch64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v1
+
+      - name: Login to Docker Hub registry
+        run: |
+          echo "${{ secrets.DOCKER_PASSWORD }}" | \
+            docker login --username ${{ secrets.DOCKER_USERNAME }} --password-stdin
+
+      - name: Build and publish image
+        uses: ./.github/actions/docker-build-image
+        with:
+          dockerfile: ${{ matrix.dockerfile }}
+          architecture: ${{ matrix.architecture }}
+
+  publish-manifest:
+
+    name: Publish multiarch manifest
+    needs:
+      - build-images
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v1
+
+      - name: Login to Docker Hub registry
+        run: |
+          echo "${{ secrets.DOCKER_PASSWORD }}" | \
+            docker login --username ${{ secrets.DOCKER_USERNAME }} --password-stdin
+
+      - name: Create and publish manifest list
+        uses: ./.github/actions/docker-create-manifest
+        env:
+          DOCKER_CLI_EXPERIMENTAL: enabled
+        with:
+          multiarch: '["amd64", "arm32v7", "arm64v8"]'
+
+
+jobs:
+  docker:
+    name: Build docker images
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - name: Docker meta
+        id: docker_meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ghcr.io/maplibre/martin
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2.5.0
+
+      - name: Login to GitHub Docker registry
+        uses: docker/login-action@v2
+        if: ${{ github.actor != 'dependabot[bot]' && !github.event.pull_request.head.repo.fork }}
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push the Docker image
+        if: ${{ github.actor != 'dependabot[bot]' && github.event_name != 'pull_request' }}
+        uses: docker/build-push-action@v4
+        with:
+          push: true
+          tags: ${{ steps.docker_meta.outputs.tags }}
+          labels: ${{ steps.docker_meta.outputs.labels }}
+          platforms: 
+             - linux/arm64
+             - linux/amd64

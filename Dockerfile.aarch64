@@ -1,4 +1,7 @@
-FROM multiarch/qemu-user-static:x86_64-aarch64 as qemu
+ARG FROM_ARCH="x86_64"
+ARG TO_ARCH="aarch64"
+
+FROM multiarch/qemu-user-static:${FROM_ARCH}-${TO_ARCH} as qemu
 
 FROM arm64v8/python:3.12-alpine
 

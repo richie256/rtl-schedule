@@ -196,8 +196,6 @@ class ParseRTLData:
             time_m = int(row_time_str[3:5])
             time_s = int(row_time_str[6:8])
 
-            _LOGGER.info("Parsing date row_time_str: {}".format(row_time_str))
-
             try:
                 row_time = datetime.time(hour=time_h, minute=time_m, second=time_s)
                 row_datetime = datetime.datetime.combine(row_date, row_time)

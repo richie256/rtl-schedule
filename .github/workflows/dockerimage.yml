@@ -1,70 +1,41 @@
-name: Docker Images CI
 
 on: [push]
-# on: 
-#   push:
-#     branches:
-#       - preview
-#     tags:
-#       - 'v*'
 
 jobs:
-
-  build-images:
-
-    name: Build '${{ matrix.architecture }}' image
-
-    runs-on: ubuntu-latest
-
+  build:
+    runs-on: ${{ matrix.runner }}
+    
     strategy:
       matrix:
-        architecture:
-          - linux/amd64
-          - linux/arm64/v8
-
         include:
-          - architecture: linux/amd64
-            dockerfile: Dockerfile
-          # - architecture: arm32v7
-            # dockerfile: Dockerfile.armhf
-          - architecture: linux/arm64/v8
-            dockerfile: Dockerfile.aarch64
-
+          - architecture: amd64
+            runner: ubuntu-latest
+          - architecture: arm64
+            runner: ubuntu-22.04-arm # Or ubuntu-24.04-arm
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v1
+        uses: actions/checkout@v4
 
-      - name: Login to Docker Hub registry
-        run: |
-          echo "${{ secrets.DOCKER_PASSWORD }}" | \
-            docker login --username ${{ secrets.DOCKER_USERNAME }} --password-stdin
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Build and publish image
-        uses: ./.github/actions/docker-build-image
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
         with:
-          dockerfile: ${{ matrix.dockerfile }}
-          architecture: ${{ matrix.architecture }}
+          context: .
+          platforms: linux/${{ matrix.architecture }}
+          push: true
+          tags: your-repo/your-image:latest-${{ matrix.architecture }}
 
-  publish-manifest:
-
-    name: Publish multiarch manifest
-    needs:
-      - build-images
-
+  create-manifest:
+    needs: build
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v1
-
-      - name: Login to Docker Hub registry
+      - name: Login to Container Registry
+        # ... (login steps)
+      - name: Create multi-arch manifest
         run: |
-          echo "${{ secrets.DOCKER_PASSWORD }}" | \
-            docker login --username ${{ secrets.DOCKER_USERNAME }} --password-stdin
-
-      - name: Create and publish manifest list
-        uses: ./.github/actions/docker-create-manifest
-        env:
-          DOCKER_CLI_EXPERIMENTAL: enabled
-        with:
-          multiarch: '["amd64", "arm32v7", "arm64v8"]'
+          docker buildx imagetools create \
+            your-repo/your-image:latest \
+            your-repo/your-image:latest-amd64 \
+            your-repo/your-image:latest-arm64
