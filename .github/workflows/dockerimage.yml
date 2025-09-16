@@ -184,7 +184,7 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        
+
       # Login against a Docker registry except on PR
       # https://github.com/docker/login-action
       - name: Log into registry ${{ env.REGISTRY }}
@@ -197,7 +197,6 @@ jobs:
       - uses: Noelware/docker-manifest-action@v1
         with:
             inputs: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-            # images: namespace/image:latest-amd64,namespace:image/latest-arm64
-            images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-amd64,${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-arm64
+            tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-amd64,${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-arm64
             push: true
     
