@@ -9,18 +9,6 @@ Return the time and info of the next bus for a giving bus-stop of the RTL.
 - Stop Code number.
 - Log in to a Docker registry.
 
-# TODO List
-
-- [x] Finalize the coding.
-- [x] Fully test GitHub Automated actions.
-- [x] Create a Docker container registry.
-- [x] Add 24h expiration for the zip file.
-- [x] Add MQTT functionality.
-- [ ] Observed a problem with current datetime in Docker Raspberry Pi.
-- [ ] Create lite mode for Raspberry Pi-friendly.
-- [ ] Indicate how to find a stop code.
-- [ ] Sometimes, the rage of date in the file `calendar.txt` in the current zip file is in the future.
-
 ## Supported Architectures
 
 This image supports multiple architectures such as `x86-64`, `armhf` and `arm64`. Simply pulling `richie256/rtl-schedule` should retrieve the correct image for your architecture, but you can always pull specific architecture images via tags.

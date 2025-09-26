@@ -47,7 +47,15 @@ class TestDataParser(unittest.TestCase):
     def test_init_downloads_new_file(self, mock_is_file_expired, mock_requests_get):
         # Mock the response from requests.get
         mock_response = MagicMock()
-        mock_response.content = b'dummy zip content'
+        # Create a valid zip file in memory
+        from io import BytesIO
+        zip_buffer = BytesIO()
+        with ZipFile(zip_buffer, 'w') as zf:
+            zf.writestr('stops.txt', 'stop_id,stop_code,stop_name\n1,123,Test Stop 1')
+            zf.writestr('calendar.txt', 'service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n1,1,1,1,1,1,0,0,20250101,20251231')
+            zf.writestr('stop_times.txt', 'trip_id,arrival_time,departure_time,stop_id,stop_sequence\n1,10:00:00,10:00:30,1,1')
+            zf.writestr('trips.txt', 'route_id,service_id,trip_id,trip_headsign\n101,1,1,To Downtown')
+        mock_response.content = zip_buffer.getvalue()
         mock_requests_get.return_value = mock_response
 
         # Create a dummy gtfs.zip file to be overwritten
