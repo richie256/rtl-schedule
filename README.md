@@ -1,6 +1,6 @@
 # richie256/rtl-schedule
 
-![ci workflow](https://github.com/richie256/rtl-schedule/workflows/Docker%20Images%20CI/badge.svg)
+[![Docker Image CI](https://github.com/rdubois/rtl-schedule/actions/workflows/dockerimage.yml/badge.svg)](https://github.com/rdubois/rtl-schedule/actions/workflows/dockerimage.yml)
 
 Return the time and info of the next bus for a giving bus-stop of the RTL.
 
