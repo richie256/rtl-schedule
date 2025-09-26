@@ -1,9 +1,8 @@
 import unittest
 from unittest.mock import patch, MagicMock
-from fastapi.testclient import TestClient
 from main import app
 
-client = TestClient(app)
+client = app.test_client()
 
 class TestMain(unittest.TestCase):
 
@@ -28,7 +27,7 @@ class TestMain(unittest.TestCase):
 
             response = client.get("/rtl_schedule/nextstop/123")
             self.assertEqual(response.status_code, 200)
-            data = response.json()
+            data = response.get_json()
             self.assertEqual(data['nextstop_nbrmins'], 10)
             self.assertEqual(data['route_id'], 101)
 
@@ -39,13 +38,12 @@ class TestMain(unittest.TestCase):
 
         response = client.get("/rtl_schedule/nextstop/123")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"error": "No more buses for today"})
+        self.assertEqual(response.get_json(), {"error": "No more buses for today"})
 
     @patch('main.mqtt_publisher_task')
     def test_start_mqtt_publisher(self, mock_mqtt_publisher_task):
         response = client.post("/start-mqtt-publisher?stop_code=123&mqtt_host=localhost")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"message": "MQTT publisher started in the background."})
-
+        self.assertEqual(response.get_json(), {"message": "MQTT publisher started in the background."})
 if __name__ == '__main__':
     unittest.main()

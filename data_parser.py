@@ -12,17 +12,28 @@ from util import is_file_expired
 class ParseRTLData:
     def __init__(self):
         self.schedule_zipfile = RTL_GTFS_ZIP_FILE
-        file = os.getcwd() + '/' + self.schedule_zipfile
+        _LOGGER.info(f"ParseRTLData init")
+        
+        # Get the absolute path to the directory of the current script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        file = os.path.join(script_dir, self.schedule_zipfile)
 
-        if not (os.path.isfile(file)) or is_file_expired(file):
-            self.download_gtfs_file(file)
-            _LOGGER.info(f"Downloaded a new zip file from [{RTL_GTFS_URL}]")
+        try:
+            if not (os.path.isfile(file)) or is_file_expired(file):
+                self.download_gtfs_file(file)
+                _LOGGER.info(f"Downloaded a new zip file from [{RTL_GTFS_URL}]")
 
-        with zipfile.ZipFile(self.schedule_zipfile) as my_zip:
-            self.stops = read_csv(my_zip.open('stops.txt'), index_col='stop_code')
-            self.calendar = read_csv(my_zip.open('calendar.txt'))
-            self.stop_times = read_csv(my_zip.open('stop_times.txt'), index_col='stop_id')
-            self.trips = read_csv(my_zip.open('trips.txt'))
+            with zipfile.ZipFile(file) as my_zip:
+                self.stops = read_csv(my_zip.open('stops.txt'), index_col='stop_code')
+                self.calendar = read_csv(my_zip.open('calendar.txt'))
+                self.stop_times = read_csv(my_zip.open('stop_times.txt'), index_col='stop_id')
+                self.trips = read_csv(my_zip.open('trips.txt'))
+        except FileNotFoundError:
+            _LOGGER.error(f"GTFS file not found at {file}. Please check the file path and permissions.")
+            raise
+        except Exception as e:
+            _LOGGER.error(f"An error occurred while parsing the GTFS file: {e}")
+            raise
 
     @staticmethod
     def download_gtfs_file(zipfile_location) -> None:
@@ -33,6 +44,9 @@ class ParseRTLData:
 
     def get_stop_id(self, stop_code: int) -> int:
         """ Retrieve the stop_id based on a stop_code """
+        if stop_code not in self.stops.index:
+            _LOGGER.error(f"Stop code {stop_code} not found in the GTFS data.")
+            return None
         return self.stops.loc[stop_code, "stop_id"]
 
     def get_service_id(self, date) -> int:
@@ -60,17 +74,21 @@ class ParseRTLData:
             ]
             if not service.empty:
                 return service.iloc[0]["service_id"]
-
-        # TODO: Unexpected, raise something
-        return -1
-
+            
+            raise ValueError(f"No service found for date {date}")
     def get_next_stop(self, stop_id: int, parm_datetime):
         """Retrieve the next stop information"""
         _LOGGER.info(f"Retrieve the next stop information. get_next_stop({stop_id}, {parm_datetime.date()})")
 
-        today_service_id = self.get_service_id(parm_datetime.date())
+        try:
+            today_service_id = self.get_service_id(parm_datetime.date())
+        except ValueError as e:
+            _LOGGER.error(e)
+            return None
 
-        stop_times_for_stop = self.stop_times.loc[[stop_id,]]
+        _LOGGER.info(f"self.stop_times.index: {self.stop_times.index}")
+
+        stop_times_for_stop = self.stop_times.loc[self.stop_times.index == stop_id]
         
         results = stop_times_for_stop.merge(self.trips, how='left', on='trip_id', validate='many_to_one')
         

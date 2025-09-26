@@ -11,15 +11,14 @@ Return the time and info of the next bus for a giving bus-stop of the RTL.
 
 ## Supported Architectures
 
-This image supports multiple architectures such as `x86-64`, `armhf` and `arm64`. Simply pulling `richie256/rtl-schedule` should retrieve the correct image for your architecture, but you can always pull specific architecture images via tags.
+This image supports multiple architectures such as `x86-64` and `arm64`. Simply pulling `richie256/rtl-schedule` should retrieve the correct image for your architecture, but you can always pull specific architecture images via tags.
 
 The architectures supported by this image are:
 
 | Architecture | Tag (`latest`) |
 | :----: | --- |
-| x86-64 | `amd64-latest` |
-| armhf | `arm32v7-latest` |
-| arm64 | `arm64v8-latest` |
+| x86-64 | `latest-amd64` |
+| arm64 | `latest-arm64` |
 
 ## Usage
 
@@ -40,7 +39,7 @@ Refer to the following table for parameters available to the container images:
 |       Parameter       | Required | Description |
 |:---------------------:| --- | --- |
 | `-e RTL_MODE=<mode>`  | | Supported mode: JSON for JSON MS, MQTT. |
-| `-e EXTERNAL_PORT:80` | <div align="center">✔</div> | Publish the container's `80` internal port to the host as `EXTERNAL_PORT`. |
+| `-p <host_port>:80` | <div align="center">✔</div> | Publish the container's `80` internal port to the host. |
 
 
 ### How to call the application
@@ -64,7 +63,7 @@ docker build -t rtl-schedule:local .
 ``` bash
 docker run -d \
     --name=rtl-schedule \
-    -p <EXTERNAL_PORT>:80 \
+    -p 80:80 \
     --restart unless-stopped \
     rtl-schedule:local
 ```

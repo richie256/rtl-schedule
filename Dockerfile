@@ -14,4 +14,4 @@ COPY . .
 ENV TZ=America/Montreal
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && dpkg-reconfigure -f noninteractive tzdata
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "80"]
+CMD ["gunicorn", "--bind", "0.0.0.0:80", "main:app"]

@@ -1,4 +1,5 @@
-from fastapi import FastAPI, BackgroundTasks
+
+import threading
 import paho.mqtt.publish as publish
 import logging
 import datetime
@@ -6,16 +7,22 @@ import os
 import time
 import json
 
+from flask import Flask, jsonify, request
+
 from const import _LOGGER, RTL_MQTT_MODE, RTL_JSON_MS_MODE
 from data_parser import ParseRTLData
 
-app = FastAPI()
+app = Flask(__name__)
 
 rtl_data = ParseRTLData()
 
-@app.get("/rtl_schedule/nextstop/{stop_code}")
+@app.route("/rtl_schedule/nextstop/<int:stop_code>", methods=['GET'])
+
 def get_next_stop(stop_code: int):
+    _LOGGER.info(f"get_next_stop [{stop_code}]")
     stop_id = rtl_data.get_stop_id(stop_code)
+    if stop_id is None:
+        return jsonify({"error": "Stop code not found"}), 404
     current_datetime = datetime.datetime.now().replace(microsecond=0)
     next_stop_row = rtl_data.get_next_stop(stop_id, current_datetime)
 
@@ -26,13 +33,13 @@ def get_next_stop(stop_code: int):
         result = {
             'nextstop_nbrmins': int(nbr_minutes),
             'nextstop_nbrsecs': int(nbr_seconds),
-            'route_id': next_stop_row.route_id,
-            'arrival_time': next_stop_row.arrival_time,
-            'trip_headsign': next_stop_row.trip_headsign,
+            'route_id': int(next_stop_row.route_id),
+            'arrival_time': str(next_stop_row.arrival_time),
+            'trip_headsign': str(next_stop_row.trip_headsign),
             'current_time': str(current_datetime.time()),
         }
-        return result
-    return {"error": "No more buses for today"}
+        return jsonify(result)
+    return jsonify({"error": "No more buses for today"})
 
 def send_mqtt(topic, payload, host: str, port: int, auth):
     try:
@@ -63,11 +70,19 @@ def mqtt_publisher_task(stop_code: int, host: str, port: int, auth):
             send_mqtt(f'schedule/bus_stop/{stop_code}', json.dumps(payload), host, port, auth)
         time.sleep(20)
 
-@app.post("/start-mqtt-publisher")
-def start_mqtt_publisher(stop_code: int, mqtt_host: str, background_tasks: BackgroundTasks, mqtt_port: int = 1883, mqtt_username: str = None, mqtt_password: str = None):
+@app.route("/start-mqtt-publisher", methods=['POST'])
+def start_mqtt_publisher():
+    stop_code = request.args.get('stop_code', type=int)
+    mqtt_host = request.args.get('mqtt_host')
+    mqtt_port = request.args.get('mqtt_port', default=1883, type=int)
+    mqtt_username = request.args.get('mqtt_username')
+    mqtt_password = request.args.get('mqtt_password')
+
     auth = None
     if mqtt_username and mqtt_password:
         auth = {'username': mqtt_username, 'password': mqtt_password}
     
-    background_tasks.add_task(mqtt_publisher_task, stop_code, mqtt_host, mqtt_port, auth)
-    return {"message": "MQTT publisher started in the background."}
+    task = threading.Thread(target=mqtt_publisher_task, args=(stop_code, mqtt_host, mqtt_port, auth))
+    task.start()
+    
+    return jsonify({"message": "MQTT publisher started in the background."})
