@@ -72,6 +72,7 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=latest-amd64,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=latest-arm64,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,prefix=,suffix=,format=short
 
       # Build and push Docker image with Buildx (don't push on PR)
       # https://github.com/docker/build-push-action
