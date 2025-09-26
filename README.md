@@ -1,6 +1,6 @@
 # richie256/rtl-schedule
 
-![ci workflow](https://github.com/richie256/rtl-schedule/workflows/Docker%20Images%20CI/badge.svg)
+[![Docker Image CI](https://github.com/richie256/rtl-schedule/actions/workflows/dockerimage.yml/badge.svg)](https://github.com/richie256/rtl-schedule/actions/workflows/dockerimage.yml)
 
 Return the time and info of the next bus for a giving bus-stop of the RTL.
 
@@ -9,29 +9,16 @@ Return the time and info of the next bus for a giving bus-stop of the RTL.
 - Stop Code number.
 - Log in to a Docker registry.
 
-# TODO List
-
-- [x] Finalize the coding.
-- [x] Fully test GitHub Automated actions.
-- [x] Create a Docker container registry.
-- [x] Add 24h expiration for the zip file.
-- [x] Add MQTT functionality.
-- [ ] Observed a problem with current datetime in Docker Raspberry Pi.
-- [ ] Create light mode for Raspberry Pi-friendly.
-- [ ] Indicate how to find a stop code.
-- [ ] Sometimes, the rage of date in the file `calendar.txt` in the current zip file is in the future.
-
 ## Supported Architectures
 
-This image supports multiple architectures such as `x86-64`, `armhf` and `arm64`. Simply pulling `richie256/rtl-schedule` should retrieve the correct image for your architecture, but you can always pull specific architecture images via tags.
+This image supports multiple architectures such as `x86-64` and `arm64`. Simply pulling `richie256/rtl-schedule` should retrieve the correct image for your architecture, but you can always pull specific architecture images via tags.
 
 The architectures supported by this image are:
 
 | Architecture | Tag (`latest`) |
 | :----: | --- |
-| x86-64 | `amd64-latest` |
-| armhf | `arm32v7-latest` |
-| arm64 | `arm64v8-latest` |
+| x86-64 | `latest-amd64` |
+| arm64 | `latest-arm64` |
 
 ## Usage
 
@@ -40,7 +27,7 @@ The architectures supported by this image are:
 ```
 docker run -d \
     --name=rtl-schedule \
-    -p <EXTERNAL_PORT>:80 \
+    -p 80:80 \
     --restart unless-stopped \
     richie256/rtl-schedule
 ```
@@ -49,15 +36,15 @@ docker run -d \
 
 Refer to the following table for parameters available to the container images:
 
-| Parameter | Required | Description |
-| :----: | --- | --- |
-| `-e RTL_MODE=<mode>` | | Supported mode: JSON for JSON MS, MQTT. |
-| `-p <EXTERNAL_PORT>:80` | <div align="center">✔</div> | Publish the container's `80` internal port to the host as `<EXTERNAL_PORT>`. |
+|       Parameter       | Required | Description |
+|:---------------------:| --- | --- |
+| `-e RTL_MODE=<mode>`  | | Supported mode: JSON for JSON MS, MQTT. |
+| `-p <host_port>:80` | <div align="center">✔</div> | Publish the container's `80` internal port to the host. |
 
 
 ### How to call the application
 
-`curl http://localhost:<EXTERNAL_PORT>/rtl_schedule/nextstop/<STOP_CODE>`
+`curl http://localhost:80/rtl_schedule/nextstop/123`
 
 Command line parameters:
 
@@ -65,6 +52,21 @@ Command line parameters:
 | :----: | --- |
 | `<STOP_CODE>` | Your desired stop code.
 
+
+# Build locally
+
+Build
+``` bash
+docker build -t rtl-schedule:local .
+```
+
+``` bash
+docker run -d \
+    --name=rtl-schedule \
+    -p 80:80 \
+    --restart unless-stopped \
+    rtl-schedule:local
+```
 
 # MQTT DAEMON
 
