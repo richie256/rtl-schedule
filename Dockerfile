@@ -18,9 +18,9 @@ COPY . .
 
 RUN chown -R app:app /usr/src/app
 
-USER app
-
 ENV TZ=America/Montreal
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && dpkg-reconfigure -f noninteractive tzdata
+
+USER app
 
 CMD ["gunicorn", "--bind", "0.0.0.0:80", "--log-level", "info", "main:app"]
