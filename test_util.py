@@ -25,6 +25,7 @@ from freezegun import freeze_time
 @freeze_time("2023-03-15 13:00:00")
 def test_is_file_expired(mocker):
     mocker.patch('util.os.path.isfile', return_value=True)
+    mocker.patch('util.os.path.getsize', return_value=1024)
     
     # Case 1: File is not expired
     mocker.patch('util.get_modification_date', return_value=datetime.datetime(2023, 3, 15, 12, 0, 0))
