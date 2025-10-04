@@ -45,6 +45,10 @@ def is_file_expired(path: str) -> bool:
     if not (os.path.isfile(path)):
         return True
 
+    if os.path.getsize(path) == 0:
+        _LOGGER.info(f"File {path} is zero size, considering it expired.")
+        return True
+
     modification_date = get_modification_date(path)
     # current_date = datetime.datetime.now('UTC')
     # current_date = datetime.datetime.utcnow()

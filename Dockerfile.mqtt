@@ -12,9 +12,12 @@ RUN addgroup --system app && adduser --system --ingroup app app
 
 WORKDIR /usr/src/app
 
-COPY --from=builder /usr/src/app /usr/src/app
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 
-COPY . .
+COPY mqtt_publisher.py .
+COPY const.py .
+COPY util.py .
+COPY data_parser.py .
 
 RUN chown -R app:app /usr/src/app
 

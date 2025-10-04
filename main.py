@@ -19,7 +19,7 @@ if __name__ != '__main__':
 def log_request_info():
     if request.path == '/health':
         return
-    _LOGGER.info(f'Received request: {request.method} {request.path} from {request.remote_addr} with headers: {request.headers}')
+    _LOGGER.info(f'Received request: {request.method} {request.path} from {request.remote_addr}')
 
 rtl_data = ParseRTLData()
 

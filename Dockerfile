@@ -1,20 +1,13 @@
-FROM python:3.12-slim as builder
-
-WORKDIR /usr/src/app
-
-COPY requirements.txt .
-
-RUN pip install --no-cache-dir -r requirements.txt
-
 FROM python:3.12-slim
 
 RUN addgroup --system app && adduser --system --ingroup app app
 
 WORKDIR /usr/src/app
 
-COPY --from=builder /usr/src/app /usr/src/app
-
 COPY . .
+
+RUN apt-get update && apt-get install -y curl
+RUN pip install --no-cache-dir -r requirements.txt
 
 RUN chown -R app:app /usr/src/app
 
