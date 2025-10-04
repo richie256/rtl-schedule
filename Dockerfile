@@ -8,7 +8,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 FROM python:3.12-slim
 
-RUN addgroup -S app && adduser -S -G app app
+RUN addgroup --system app && adduser --system --ingroup app app
 
 WORKDIR /usr/src/app
 
