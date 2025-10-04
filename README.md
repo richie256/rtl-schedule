@@ -12,6 +12,13 @@ This project provides two services to get bus schedule information from the Rés
 - A bus stop code number.
 - Docker and Docker Compose.
 
+## How to find a Stop Code
+
+To get a stop code, open Google Maps and locate a bus stop in RTL-deserved location. Click on the bus stop, and you will find the stop id in the information panel.
+
+![How to find a stop code on Google Maps](docs/images/sample_googleMaps.png)
+
+
 ## Supported Architectures
 
 This image supports multiple architectures such as `x86-64` and `arm64`. The Docker build process should retrieve the correct image for your architecture.
