@@ -4,8 +4,9 @@ import time
 import datetime
 import logging
 import json
-import paho.mqtt.publish as publish
-from data_parser import ParseRTLData
+import paho.mqtt.client as mqtt
+from paho.mqtt.client import CallbackAPIVersion
+import requests
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -29,13 +30,29 @@ def is_rush_hour():
 
     return is_morning_rush or is_evening_rush
 
-def send_mqtt(topic, payload, host, port, auth):
-    """Sends a message to an MQTT broker."""
-    try:
-        publish.single(topic, payload=payload, qos=0, hostname=host, port=port, auth=auth)
-        _LOGGER.info(f"Published to MQTT topic '{topic}'")
-    except Exception as ex:
-        _LOGGER.error(f"MQTT Publish Failed: {ex}")
+def publish_hass_discovery_config(client, stop_code, discovery_prefix):
+    """Publishes the Home Assistant discovery configuration for the bus stop sensor."""
+    object_id = f"rtl_schedule_{stop_code}"
+    discovery_topic = f"{discovery_prefix}/sensor/{object_id}/config"
+
+    payload = {
+        "name": f"Next Bus at Stop {stop_code}",
+        "state_topic": "home/schedule/bus_stop",
+        "value_template": f"{{% if value_json.stop_code == {stop_code} %}}{{ (value_json.nextstop_nbrmins + (value_json.nextstop_nbrsecs / 60)) | round(2) }}{{% else %}}{{ states('sensor.{object_id}') }}{{% endif %}}",
+        "json_attributes_topic": "home/schedule/bus_stop",
+        "json_attributes_template": f"{{% if value_json.stop_code == {stop_code} %}}{{ value_json | tojson }}{{% endif %}}",
+        "unique_id": object_id,
+        "icon": "mdi:bus-clock",
+        "unit_of_measurement": "min",
+        "device": {
+            "identifiers": ["rtl_schedule"],
+            "name": "RTL Schedule",
+            "manufacturer": "RTL"
+        }
+    }
+
+    client.publish(discovery_topic, json.dumps(payload), retain=True)
+    _LOGGER.info(f"Published Home Assistant discovery configuration to '{discovery_topic}'")
 
 def main():
     """Main function to retrieve and publish bus schedule data."""
@@ -45,43 +62,52 @@ def main():
         mqtt_port = int(os.environ.get("MQTT_PORT", 1883))
         mqtt_username = os.environ.get("MQTT_USERNAME")
         mqtt_password = os.environ.get("MQTT_PASSWORD")
+        mqtt_use_tls = os.environ.get("MQTT_USE_TLS", "False").lower() == "true"
+        hass_discovery_enabled = os.environ.get("HASS_DISCOVERY_ENABLED", "False").lower() == "true"
+        hass_discovery_prefix = os.environ.get("HASS_DISCOVERY_PREFIX", "homeassistant")
+
     except (KeyError, ValueError) as e:
         _LOGGER.error(f"Environment variable error: {e}")
         return
 
-    auth = None
+    client = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2, protocol=mqtt.MQTTv5)
+
     if mqtt_username and mqtt_password:
-        auth = {'username': mqtt_username, 'password': mqtt_password}
+        client.username_pw_set(mqtt_username, mqtt_password)
 
-    rtl_data = ParseRTLData()
-    stop_id = rtl_data.get_stop_id(stop_code)
+    if mqtt_use_tls:
+        client.tls_set()
 
-    if stop_id is None:
-        _LOGGER.error(f"Could not find stop_id for stop_code {stop_code}")
-        return
+    client.connect(mqtt_host, mqtt_port)
+    client.loop_start()
 
-    while True:
-        current_datetime = datetime.datetime.now().replace(microsecond=0)
-        next_stop_row = rtl_data.get_next_stop(stop_id, current_datetime)
+    if hass_discovery_enabled:
+        publish_hass_discovery_config(client, stop_code, hass_discovery_prefix)
 
-        if next_stop_row is not None:
-            difference = next_stop_row.arrival_datetime - current_datetime
-            nbr_minutes, nbr_seconds = divmod(difference.total_seconds(), 60)
+    web_service_url = f"http://web:80/rtl_schedule/nextstop/{stop_code}"
 
-            payload = {
-                'arrival_time': str(next_stop_row.arrival_time),
-                'current_datetime': str(current_datetime),
-                'nextstop_nbrmins': int(nbr_minutes),
-                'nextstop_nbrsecs': int(nbr_seconds),
-                'route_id': int(next_stop_row.route_id),
-                'trip_headsign': str(next_stop_row.trip_headsign),
-            }
+    try:
+        while True:
+            try:
+                response = requests.get(web_service_url)
+                response.raise_for_status()  # Raise an exception for bad status codes
+                payload = response.json()
 
-            send_mqtt(f'schedule/bus_stop/{stop_code}', json.dumps(payload), mqtt_host, mqtt_port, auth)
+                payload['stop_code'] = stop_code
 
-        interval = 10 if is_rush_hour() else 60
-        _LOGGER.info(f"Waiting for {interval} seconds...")
-        time.sleep(interval)
+                topic = 'home/schedule/bus_stop'
+                client.publish(topic, json.dumps(payload))
+                _LOGGER.info(f"Published to MQTT topic '{topic}'")
+
+            except requests.exceptions.RequestException as e:
+                _LOGGER.error(f"Error calling web service: {e}")
+
+            interval = 10 if is_rush_hour() else 60
+            _LOGGER.info(f"Waiting for {interval} seconds...")
+            time.sleep(interval)
+    finally:
+        client.loop_stop()
+        client.disconnect()
 
 if __name__ == "__main__":
     main()

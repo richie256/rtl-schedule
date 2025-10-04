@@ -39,6 +39,9 @@ MQTT_HOST=your_mqtt_broker_host
 MQTT_PORT=1883
 MQTT_USERNAME=your_mqtt_username
 MQTT_PASSWORD=your_mqtt_password
+MQTT_USE_TLS=false
+HASS_DISCOVERY_ENABLED=false
+HASS_DISCOVERY_PREFIX=homeassistant
 ```
 
 Replace the placeholder values with your actual bus stop code and MQTT broker details.

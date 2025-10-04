@@ -86,8 +86,6 @@ class ParseRTLData:
             _LOGGER.error(e)
             return None
 
-        _LOGGER.info(f"self.stop_times.index: {self.stop_times.index}")
-
         stop_times_for_stop = self.stop_times.loc[self.stop_times.index == stop_id]
         
         results = stop_times_for_stop.merge(self.trips, how='left', on='trip_id', validate='many_to_one')
@@ -109,7 +107,6 @@ class ParseRTLData:
                 row_time = datetime.time(hour=time_h, minute=time_m, second=time_s)
                 return datetime.datetime.combine(row_date, row_time)
             except ValueError:
-                _LOGGER.info(f"Invalid time/date detected in RSS data {row['arrival_time']}{row_date}, ignoring them.")
                 return None
 
         today_results['arrival_datetime'] = today_results.apply(calculate_arrival_datetime, axis=1)
