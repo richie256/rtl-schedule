@@ -2,103 +2,111 @@
 
 [![Docker Image CI](https://github.com/richie256/rtl-schedule/actions/workflows/dockerimage.yml/badge.svg)](https://github.com/richie256/rtl-schedule/actions/workflows/dockerimage.yml)
 
-Return the time and info of the next bus for a giving bus-stop of the RTL.
+This project provides two services to get bus schedule information from the Réseau de transport de Longueuil (RTL):
+
+1.  A web service to get the next bus for a given stop.
+2.  An MQTT publisher that periodically fetches the next bus time and publishes it to an MQTT broker.
 
 ## Prerequisite
 
-- Stop Code number.
-- Log in to a Docker registry.
+- A bus stop code number.
+- Docker and Docker Compose.
 
 ## Supported Architectures
 
-This image supports multiple architectures such as `x86-64` and `arm64`. Simply pulling `richie256/rtl-schedule` should retrieve the correct image for your architecture, but you can always pull specific architecture images via tags.
+This image supports multiple architectures such as `x86-64` and `arm64`. The Docker build process should retrieve the correct image for your architecture.
 
-The architectures supported by this image are:
+## Usage with Docker Compose
 
-| Architecture | Tag (`latest`) |
-| :----: | --- |
-| x86-64 | `latest-amd64` |
-| arm64 | `latest-arm64` |
+This project uses Docker Compose to run the services. A `docker-compose.yml` file is provided to define and configure the services.
 
-## Usage
+### 1. Environment Variables
 
-### Create and start the container
+Before starting the services, you need to create a `.env` file in the root of the project. This file will contain the necessary environment variables for the `mqtt-publisher` service.
 
-```
-docker run -d \
-    --name=rtl-schedule \
-    -p 80:80 \
-    --restart unless-stopped \
-    richie256/rtl-schedule
-```
-
-### Container configuration parameters
-
-Refer to the following table for parameters available to the container images:
-
-|       Parameter       | Required | Description |
-|:---------------------:| --- | --- |
-| `-e RTL_MODE=<mode>`  | | Supported mode: JSON for JSON MS, MQTT. |
-| `-p <host_port>:80` | <div align="center">✔</div> | Publish the container's `80` internal port to the host. |
-
-
-### How to call the application
-
-`curl http://localhost:80/rtl_schedule/nextstop/123`
-
-Command line parameters:
-
-| Parameter | Description |
-| :----: | --- |
-| `<STOP_CODE>` | Your desired stop code.
-
-
-# Build locally
-
-Build
-``` bash
-docker build -t rtl-schedule:local .
-```
-
-``` bash
-docker run -d \
-    --name=rtl-schedule \
-    -p 80:80 \
-    --restart unless-stopped \
-    rtl-schedule:local
-```
-
-# MQTT DAEMON
-
-Here is all the environment variables required if you use the MQTT output.
-
-| Parameter | Required | Description |
-| :----: | --- | --- |
-| `-e RTL_STOP_CODE=stop_code` | <div align="center">✔</div> | RTL stop code. |
-| `-e RTL_MODE=MQTT` | <div align="center">✔</div> | Specify the MQTT mode. |
-| `-e MQTT_HOST=<mqtt host>` | <div align="center">✔</div> | Host of your MQTT broker. |
-| `-e MQTT_PORT=<mqtt port>` | | Port of your MQTT broker. It will default to 1883 if not specified. |
-| `-e MQTT_USERNAME=<mqtt username>` | | Your MQTT username. |
-| `-e MQTT_PASSWORD=<mqtt password>` | | Your MQTT password. |
-
-### How to call the mqtt deamon
+Create a file named `.env` with the following content:
 
 ```
-docker run -d \
-    --name=rtl-schedule \
-    -e RTL_MODE=MQTT \
-    -e RTL_STOP_CODE=99999 \
-    -e MQTT_HOST=raspberrypi.local \
-    -e MQTT_PORT=1883 \
-    -e MQTT_USERNAME=username \
-    -e MQTT_PASSWORD=password \
-    --restart unless-stopped \
-    richie256/rtl-schedule
+STOP_CODE=your_stop_code
+MQTT_HOST=your_mqtt_broker_host
+MQTT_PORT=1883
+MQTT_USERNAME=your_mqtt_username
+MQTT_PASSWORD=your_mqtt_password
 ```
 
-## Notes
+Replace the placeholder values with your actual bus stop code and MQTT broker details.
 
-http://calculateur.rtl-longueuil.qc.ca/taz/rtl/horaire.php?l=44&t=32752&d=AA&date=20191104
+### 2. Start the Services
 
-http://calculateur.rtl-longueuil.qc.ca/taz/rtl/horaire.php?l=144&t=32752&d=AA&date=20191104
+To build and start both the web service and the MQTT publisher, run the following command:
 
+```bash
+docker-compose up --build -d
+```
+
+This will start the services in detached mode.
+
+### 3. Stop the Services
+
+To stop the services, run:
+
+```bash
+docker-compose down
+```
+
+## Services
+
+### Web Service (`web`)
+
+The web service provides an HTTP endpoint to get the next bus schedule for a specific stop.
+
+-   **Port:** The service is available on port `8080` of the host machine.
+-   **Endpoint:** `GET /rtl_schedule/nextstop/<STOP_CODE>`
+
+**Example using curl:**
+
+```bash
+curl http://localhost:8080/rtl_schedule/nextstop/12345
+```
+
+### MQTT Publisher (`mqtt-publisher`)
+
+The MQTT publisher periodically fetches the next bus time and publishes it to an MQTT topic.
+
+-   **Topic:** `schedule/bus_stop/<STOP_CODE>`
+-   **Interval:**
+    -   Every 10 seconds during rush hours (weekdays 6:00-9:00 and 15:00-18:00).
+    -   Every 60 seconds at all other times.
+-   **Payload:** The message payload is a JSON object containing schedule information.
+
+## Unit Tests
+
+To run the unit tests, execute the following command:
+
+```bash
+pytest
+```
+
+## Local Development
+
+If you want to run the services without Docker, you can install the dependencies from `requirements.txt` and run the applications directly.
+
+**Install dependencies:**
+
+```bash
+pip install -r requirements.txt
+```
+
+**Run the web service:**
+
+```bash
+gunicorn --bind 0.0.0.0:8080 main:app
+```
+
+**Run the MQTT publisher:**
+
+```bash
+export STOP_CODE=your_stop_code
+export MQTT_HOST=your_mqtt_broker_host
+python mqtt_publisher.py
+```
