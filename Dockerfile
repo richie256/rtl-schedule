@@ -1,17 +1,19 @@
-FROM python:3.12
+FROM python:3.12-slim
 
-ARG TARGETPLATFORM
-ENV TARGETPLATFORM=${TARGETPLATFORM}
+RUN addgroup --system app && adduser --system --ingroup app app
 
 WORKDIR /usr/src/app
 
-COPY requirements.txt .
+COPY . .
 
+RUN apt-get update && apt-get install -y curl
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+RUN chown -R app:app /usr/src/app
 
 ENV TZ=America/Montreal
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && dpkg-reconfigure -f noninteractive tzdata
 
-CMD ["gunicorn", "--bind", "0.0.0.0:80", "main:app"]
+USER app
+
+CMD ["gunicorn", "--bind", "0.0.0.0:80", "--log-level", "info", "main:app"]

@@ -1,8 +1,11 @@
-requests==2.32.5
-paho-mqtt==2.1.0
+paho-mqtt
+requests
+freezegun
+python-json-logger
 pandas==2.1.4
 Flask==3.0.3
 gunicorn==23.0.0
 pytest
+pytest-cov
 pytest-mock
 httpx

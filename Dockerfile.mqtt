@@ -1,0 +1,29 @@
+FROM python:3.12-slim as builder
+
+WORKDIR /usr/src/app
+
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+FROM python:3.12-slim
+
+RUN addgroup --system app && adduser --system --ingroup app app
+
+WORKDIR /usr/src/app
+
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+
+COPY mqtt_publisher.py .
+COPY const.py .
+COPY util.py .
+COPY data_parser.py .
+
+RUN chown -R app:app /usr/src/app
+
+ENV TZ=America/Montreal
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && dpkg-reconfigure -f noninteractive tzdata
+
+USER app
+
+CMD ["python", "mqtt_publisher.py"]
