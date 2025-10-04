@@ -24,8 +24,9 @@ def log_request_info():
 rtl_data = ParseRTLData()
 
 @app.route("/rtl_schedule/nextstop/<int:stop_code>", methods=['GET'])
-
 def get_next_stop(stop_code: int):
+    if stop_code <= 0:
+        return jsonify({"error": "Stop code must be a positive integer"}), 400
     stop_id = rtl_data.get_stop_id(stop_code)
     if stop_id is None:
         return jsonify({"error": "Stop code not found"}), 404

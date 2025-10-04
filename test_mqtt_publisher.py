@@ -1,4 +1,3 @@
-
 import pytest
 from unittest.mock import patch, MagicMock
 import datetime
@@ -8,21 +7,28 @@ from mqtt_publisher import is_rush_hour, publish_hass_discovery_config
 
 from freezegun import freeze_time
 
+mock_config = {
+    "morning_rush_start": "06:00",
+    "morning_rush_end": "09:00",
+    "evening_rush_start": "15:00",
+    "evening_rush_end": "18:00",
+}
+
 @freeze_time("2023-03-15 07:30:00")
 def test_is_rush_hour_morning():
-    assert is_rush_hour()
+    assert is_rush_hour(mock_config)
 
 @freeze_time("2023-03-15 16:30:00")
 def test_is_rush_hour_evening():
-    assert is_rush_hour()
+    assert is_rush_hour(mock_config)
 
 @freeze_time("2023-03-15 12:00:00")
 def test_is_not_rush_hour_midday():
-    assert not is_rush_hour()
+    assert not is_rush_hour(mock_config)
 
 @freeze_time("2023-03-18 08:00:00")
 def test_is_not_rush_hour_weekend():
-    assert not is_rush_hour()
+    assert not is_rush_hour(mock_config)
 
 def test_publish_hass_discovery_config():
     mock_client = MagicMock()

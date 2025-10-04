@@ -1,7 +1,8 @@
 import logging
+import os
 
 _LOGGER = logging.getLogger("rtl-schedule")
 
 
-RTL_GTFS_URL = "http://www.rtl-longueuil.qc.ca/transit/latestfeed/RTL.zip"
-RTL_GTFS_ZIP_FILE = "gtfs.zip"
+RTL_GTFS_URL = os.environ.get("RTL_GTFS_URL", "http://www.rtl-longueuil.qc.ca/transit/latestfeed/RTL.zip")
+RTL_GTFS_ZIP_FILE = os.environ.get("RTL_GTFS_ZIP_FILE", "gtfs.zip")

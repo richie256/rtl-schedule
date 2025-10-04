@@ -1,4 +1,3 @@
-
 import pytest
 from unittest.mock import patch, MagicMock
 import os
@@ -75,7 +74,7 @@ def test_get_service_id(mock_is_file_expired, gtfs_zip_file):
     parser = ParseRTLData()
     # Monday in 2025
     test_date = datetime.date(2025, 9, 29)
-    service_id = parser.get_service_id(test_date)
+    service_id = parser._get_service_id(test_date)
     assert service_id == 1
 
 @patch('data_parser.is_file_expired', return_value=False)

@@ -41,3 +41,11 @@ def test_get_next_stop_no_more_buses(mock_rtl_data, client):
     response = client.get("/rtl_schedule/nextstop/123")
     assert response.status_code == 200
     assert response.get_json() == {"error": "No more buses for today"}
+
+def test_get_next_stop_invalid_stop_code(client):
+    response = client.get("/rtl_schedule/nextstop/0")
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "Stop code must be a positive integer"}
+
+    response = client.get("/rtl_schedule/nextstop/-1")
+    assert response.status_code == 404
