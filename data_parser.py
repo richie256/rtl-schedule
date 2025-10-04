@@ -15,8 +15,8 @@ class ParseRTLData:
         _LOGGER.info(f"ParseRTLData init")
         
         # Get the absolute path to the directory of the current script
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        file = os.path.join(script_dir, self.schedule_zipfile)
+        data_dir = os.environ.get("GTFS_DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
+        file = os.path.join(data_dir, self.schedule_zipfile)
 
         try:
             if not (os.path.isfile(file)) or is_file_expired(file):
