@@ -1,10 +1,6 @@
 
-import zipfile
-from pandas import read_csv, to_datetime
-import requests
-import os
-import logging
-import datetime
+from pandas import read_csv, to_datetime, Series, errors
+import pandas
 
 from const import _LOGGER, RTL_GTFS_URL, RTL_GTFS_ZIP_FILE
 from util import is_file_expired
@@ -31,7 +27,7 @@ class ParseRTLData:
         except FileNotFoundError:
             _LOGGER.error(f"GTFS file not found at {file}. Please check the file path and permissions.")
             raise
-        except Exception as e:
+        except (zipfile.BadZipFile, pandas.errors.ParserError) as e:
             _LOGGER.error(f"An error occurred while parsing the GTFS file: {e}")
             raise
 
@@ -49,7 +45,7 @@ class ParseRTLData:
             return None
         return self.stops.loc[stop_code, "stop_id"]
 
-    def get_service_id(self, date) -> int:
+    def get_service_id(self, date: datetime.date) -> int:
         """ Retrieve the service_id for a given date """
         curr_weekday = date.weekday()
         curr_date_int = int(date.strftime("%Y%m%d"))
@@ -76,7 +72,7 @@ class ParseRTLData:
                 return service.iloc[0]["service_id"]
             
             raise ValueError(f"No service found for date {date}")
-    def get_next_stop(self, stop_id: int, parm_datetime):
+    def get_next_stop(self, stop_id: int, parm_datetime: datetime.datetime) -> Optional[Series]:
         """Retrieve the next stop information"""
         _LOGGER.info(f"Retrieve the next stop information. get_next_stop({stop_id}, {parm_datetime.date()})")
 

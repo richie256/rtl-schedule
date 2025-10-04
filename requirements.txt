@@ -1,6 +1,7 @@
 paho-mqtt
 requests
 freezegun
+python-json-logger
 pandas==2.1.4
 Flask==3.0.3
 gunicorn==22.0.0

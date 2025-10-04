@@ -1,7 +1,4 @@
-FROM python:3.12
-
-ARG TARGETPLATFORM
-ENV TARGETPLATFORM=${TARGETPLATFORM}
+FROM python:3.12-slim as builder
 
 WORKDIR /usr/src/app
 
@@ -9,7 +6,19 @@ COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
+FROM python:3.12-slim
+
+RUN addgroup -S app && adduser -S -G app app
+
+WORKDIR /usr/src/app
+
+COPY --from=builder /usr/src/app /usr/src/app
+
 COPY . .
+
+RUN chown -R app:app /usr/src/app
+
+USER app
 
 ENV TZ=America/Montreal
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && dpkg-reconfigure -f noninteractive tzdata

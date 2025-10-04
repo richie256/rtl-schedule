@@ -8,11 +8,17 @@ import paho.mqtt.client as mqtt
 from paho.mqtt.client import CallbackAPIVersion
 import requests
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-_LOGGER = logging.getLogger("rtl-mqtt-publisher")
+from pythonjsonlogger import jsonlogger
 
-def is_rush_hour():
+# Configure logging
+_LOGGER = logging.getLogger("rtl-mqtt-publisher")
+logHandler = logging.StreamHandler()
+formatter = jsonlogger.JsonFormatter()
+logHandler.setFormatter(formatter)
+_LOGGER.addHandler(logHandler)
+_LOGGER.setLevel(logging.INFO)
+
+def is_rush_hour(config: dict) -> bool:
     """Checks if the current time is during a weekday rush hour."""
     now = datetime.datetime.now()
     is_weekday = 0 <= now.weekday() <= 4  # Monday to Friday
@@ -20,10 +26,10 @@ def is_rush_hour():
         return False
 
     time_now = now.time()
-    morning_rush_start = datetime.time(6, 0)
-    morning_rush_end = datetime.time(9, 0)
-    evening_rush_start = datetime.time(15, 0)
-    evening_rush_end = datetime.time(18, 0)
+    morning_rush_start = datetime.datetime.strptime(config["morning_rush_start"], "%H:%M").time()
+    morning_rush_end = datetime.datetime.strptime(config["morning_rush_end"], "%H:%M").time()
+    evening_rush_start = datetime.datetime.strptime(config["evening_rush_start"], "%H:%M").time()
+    evening_rush_end = datetime.datetime.strptime(config["evening_rush_end"], "%H:%M").time()
 
     is_morning_rush = morning_rush_start <= time_now <= morning_rush_end
     is_evening_rush = evening_rush_start <= time_now <= evening_rush_end
@@ -52,39 +58,54 @@ def publish_hass_discovery_config(client, stop_code, discovery_prefix):
     }
 
     client.publish(discovery_topic, json.dumps(payload), retain=True)
-    _LOGGER.info(f"Published Home Assistant discovery configuration to '{discovery_topic}'")
+    _LOGGER.info("Published Home Assistant discovery configuration", extra={"topic": discovery_topic, "payload": payload})
+
+def get_mqtt_config() -> dict:
+    """Reads and returns the MQTT configuration from environment variables."""
+    try:
+        config = {
+            "stop_code": int(os.environ["STOP_CODE"]),
+            "mqtt_host": os.environ["MQTT_HOST"],
+            "mqtt_port": int(os.environ.get("MQTT_PORT", 1883)),
+            "mqtt_username": os.environ.get("MQTT_USERNAME"),
+            "mqtt_password": os.environ.get("MQTT_PASSWORD"),
+            "mqtt_use_tls": os.environ.get("MQTT_USE_TLS", "False").lower() == "true",
+            "hass_discovery_enabled": os.environ.get("HASS_DISCOVERY_ENABLED", "False").lower() == "true",
+            "hass_discovery_prefix": os.environ.get("HASS_DISCOVERY_PREFIX", "homeassistant"),
+            "morning_rush_start": os.environ.get("MORNING_RUSH_START", "06:00"),
+            "morning_rush_end": os.environ.get("MORNING_RUSH_END", "09:00"),
+            "evening_rush_start": os.environ.get("EVENING_RUSH_START", "15:00"),
+            "evening_rush_end": os.environ.get("EVENING_RUSH_END", "18:00"),
+        }
+        return config
+    except (KeyError, ValueError) as e:
+        _LOGGER.error("Environment variable error", extra={"exception": str(e)})
+        raise
 
 def main():
     """Main function to retrieve and publish bus schedule data."""
     try:
-        stop_code = int(os.environ["STOP_CODE"])
-        mqtt_host = os.environ["MQTT_HOST"]
-        mqtt_port = int(os.environ.get("MQTT_PORT", 1883))
-        mqtt_username = os.environ.get("MQTT_USERNAME")
-        mqtt_password = os.environ.get("MQTT_PASSWORD")
-        mqtt_use_tls = os.environ.get("MQTT_USE_TLS", "False").lower() == "true"
-        hass_discovery_enabled = os.environ.get("HASS_DISCOVERY_ENABLED", "False").lower() == "true"
-        hass_discovery_prefix = os.environ.get("HASS_DISCOVERY_PREFIX", "homeassistant")
-
-    except (KeyError, ValueError) as e:
-        _LOGGER.error(f"Environment variable error: {e}")
+        config = get_mqtt_config()
+    except Exception:
         return
+
+    _LOGGER.info("Starting MQTT publisher", extra={"config": config})
 
     client = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2, protocol=mqtt.MQTTv5)
 
-    if mqtt_username and mqtt_password:
-        client.username_pw_set(mqtt_username, mqtt_password)
+    if config["mqtt_username"] and config["mqtt_password"]:
+        client.username_pw_set(config["mqtt_username"], config["mqtt_password"])
 
-    if mqtt_use_tls:
+    if config["mqtt_use_tls"]:
         client.tls_set()
 
-    client.connect(mqtt_host, mqtt_port)
+    client.connect(config["mqtt_host"], config["mqtt_port"])
     client.loop_start()
 
-    if hass_discovery_enabled:
-        publish_hass_discovery_config(client, stop_code, hass_discovery_prefix)
+    if config["hass_discovery_enabled"]:
+        publish_hass_discovery_config(client, config["stop_code"], config["hass_discovery_prefix"])
 
-    web_service_url = f"http://web:80/rtl_schedule/nextstop/{stop_code}"
+    web_service_url = f"http://web:80/rtl_schedule/nextstop/{config['stop_code']}"
 
     try:
         while True:
@@ -93,17 +114,17 @@ def main():
                 response.raise_for_status()  # Raise an exception for bad status codes
                 payload = response.json()
 
-                payload['stop_code'] = stop_code
+                payload['stop_code'] = config['stop_code']
 
                 topic = 'home/schedule/bus_stop'
                 client.publish(topic, json.dumps(payload))
-                _LOGGER.info(f"Published to MQTT topic '{topic}'")
+                _LOGGER.info(f"Published to MQTT topic '{topic}'", extra={"topic": topic, "payload": payload})
 
             except requests.exceptions.RequestException as e:
-                _LOGGER.error(f"Error calling web service: {e}")
+                _LOGGER.error(f"Error calling web service", extra={"exception": str(e)})
 
-            interval = 10 if is_rush_hour() else 60
-            _LOGGER.info(f"Waiting for {interval} seconds...")
+            interval = 10 if is_rush_hour(config) else 60
+            _LOGGER.info(f"Waiting for {interval} seconds...", extra={"interval": interval})
             time.sleep(interval)
     finally:
         client.loop_stop()

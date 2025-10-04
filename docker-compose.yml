@@ -16,12 +16,12 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
 
   mqtt-publisher:
     build:
@@ -39,13 +39,12 @@ services:
       - MQTT_PASSWORD=${MQTT_PASSWORD}
       - MQTT_USE_TLS=${MQTT_USE_TLS-false}
       - HASS_DISCOVERY_ENABLED=${HASS_DISCOVERY_ENABLED-false}
-      - HASS_DISCOVERY_PREFIX=${HASS_DISCOVERY_PREFIX-homeassistant}
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "python mqtt_publisher.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
   gtfs-data:
