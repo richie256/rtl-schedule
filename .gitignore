@@ -131,3 +131,5 @@ dmypy.json
 
 .idea/workspace.xml
 .idea/tasks.xml
+
+data/
