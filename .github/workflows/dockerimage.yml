@@ -1,4 +1,12 @@
-on: [push]
+on:
+  push:
+    branches:
+      - 'main'
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - 'main'
 
 env:
   # Use docker.io for Docker Hub if empty
@@ -69,8 +77,9 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=raw,value=latest-amd64,enable=${{ github.ref == 'refs/heads/main' }}
-            type=raw,value=latest-arm64,enable=${{ github.ref == 'refs/heads/main' }}
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
             type=sha,prefix=,suffix=,format=short
 
       # Build and push Docker image with Buildx (don't push on PR)

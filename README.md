@@ -92,6 +92,29 @@ To run the unit tests, execute the following command:
 python -m pytest
 ```
 
+## Tagging and Release
+
+This project uses semantic versioning for releases. To create a new release, you need to create and push a git tag.
+
+1.  **Create a tag:**
+    To create an annotated tag (which is recommended), use:
+    ```bash
+    git tag -a v1.0.0 -m "Version 1.0.0"
+    ```
+    Replace `v1.0.0` with your desired tag and the message with a relevant description.
+
+2.  **Push the tag:**
+    To push a single tag to your remote repository (usually named `origin`), use:
+    ```bash
+    git push origin v1.0.0
+    ```
+
+    Alternatively, you can push all of your local tags at once:
+    ```bash
+    git push --tags
+    ```
+Pushing a new tag will trigger the GitHub Actions workflow to build and publish a new Docker image with the corresponding version.
+
 ## Local Development
 
 If you want to run the application without Docker, you can install the dependencies from `requirements.txt` and run the application directly in the desired mode.
