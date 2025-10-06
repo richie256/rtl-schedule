@@ -1,20 +1,21 @@
+
 # richie256/rtl-schedule
 
 [![Docker Image CI](https://github.com/richie256/rtl-schedule/actions/workflows/dockerimage.yml/badge.svg)](https://github.com/richie256/rtl-schedule/actions/workflows/dockerimage.yml)
 
-This project provides two services to get bus schedule information from the Réseau de transport de Longueuil (RTL):
+This project provides an application to get bus schedule information from the Réseau de transport de Longueuil (RTL). The application can run in two different modes:
 
-1.  A web service to get the next bus for a given stop.
-2.  An MQTT publisher that periodically fetches the next bus time and publishes it to an MQTT broker.
+1.  **HTTP Mode:** A web service to get the next bus for a given stop.
+2.  **MQTT Mode:** An MQTT publisher that periodically fetches the next bus time and publishes it to an MQTT broker.
 
 ## Prerequisite
 
 - A bus stop code number.
-- Docker and Docker Compose.
+- Docker.
 
 ## How to find a Stop Code
 
-To get a stop code, open Google Maps and locate a bus stop in RTL-deserved location. Click on the bus stop, and you will find the stop id in the information panel.
+To get a stop code, open Google Maps and locate a bus stop in an RTL-served location. Click on the bus stop, and you will find the stop id in the information panel.
 
 ![How to find a stop code on Google Maps](docs/images/sample_googleMaps.png)
 
@@ -23,15 +24,42 @@ To get a stop code, open Google Maps and locate a bus stop in RTL-deserved locat
 
 This image supports multiple architectures such as `x86-64` and `arm64`. The Docker build process should retrieve the correct image for your architecture.
 
-## Usage with Docker Compose
+## Usage
 
-This project uses Docker Compose to run the services. A `docker-compose.yml` file is provided to define and configure the services.
+This project can be run using Docker. First, build the Docker image, then run it in the desired mode.
 
-### 1. Environment Variables
+### 1. Build the Docker Image
 
-Before starting the services, you need to create a `.env` file in the root of the project. This file will contain the necessary environment variables for the `mqtt-publisher` service.
+To build the Docker image locally, run the following command in the root of the project:
 
-Create a file named `.env` with the following content:
+```bash
+docker build -t rtl-schedule .
+```
+
+### 2. Run the Container
+
+You can run the container in either HTTP or MQTT mode.
+
+#### HTTP Mode
+
+To run the container in HTTP mode, which provides a web service to get the next bus schedule, use the following command:
+
+```bash
+docker run -p 8080:80 -v ./data:/data -e MODE=http rtl-schedule
+```
+
+-   **Port:** The service is available on port `8080` of the host machine.
+-   **Endpoint:** `GET /rtl_schedule/nextstop/<STOP_CODE>`
+
+**Example using curl:**
+
+```bash
+curl http://localhost:8080/rtl_schedule/nextstop/12345
+```
+
+#### MQTT Mode
+
+To run the container in MQTT mode, which publishes the bus schedule to an MQTT broker, you need to provide environment variables. Create a `.env` file with the following content:
 
 ```
 STOP_CODE=your_stop_code
@@ -44,46 +72,13 @@ HASS_DISCOVERY_ENABLED=false
 HASS_DISCOVERY_PREFIX=homeassistant
 ```
 
-Replace the placeholder values with your actual bus stop code and MQTT broker details.
-
-### 2. Start the Services
-
-To build and start both the web service and the MQTT publisher, run the following command:
+Then run the container with the following command:
 
 ```bash
-docker-compose up --build -d
+docker run --env-file .env -v ./data:/data -e MODE=mqtt rtl-schedule
 ```
 
-This will start the services in detached mode.
-
-### 3. Stop the Services
-
-To stop the services, run:
-
-```bash
-docker-compose down
-```
-
-## Services
-
-### Web Service (`web`)
-
-The web service provides an HTTP endpoint to get the next bus schedule for a specific stop.
-
--   **Port:** The service is available on port `8080` of the host machine.
--   **Endpoint:** `GET /rtl_schedule/nextstop/<STOP_CODE>`
-
-**Example using curl:**
-
-```bash
-curl http://localhost:8080/rtl_schedule/nextstop/12345
-```
-
-### MQTT Publisher (`mqtt-publisher`)
-
-The MQTT publisher periodically fetches the next bus time and publishes it to an MQTT topic.
-
--   **Topic:** `schedule/bus_stop/<STOP_CODE>`
+-   **Topic:** `home/schedule/bus_stop`
 -   **Interval:**
     -   Every 10 seconds during rush hours (weekdays 6:00-9:00 and 15:00-18:00).
     -   Every 60 seconds at all other times.
@@ -94,12 +89,35 @@ The MQTT publisher periodically fetches the next bus time and publishes it to an
 To run the unit tests, execute the following command:
 
 ```bash
-pytest
+python -m pytest
 ```
+
+## Tagging and Release
+
+This project uses semantic versioning for releases. To create a new release, you need to create and push a git tag.
+
+1.  **Create a tag:**
+    To create an annotated tag (which is recommended), use:
+    ```bash
+    git tag -a v1.0.0 -m "Version 1.0.0"
+    ```
+    Replace `v1.0.0` with your desired tag and the message with a relevant description.
+
+2.  **Push the tag:**
+    To push a single tag to your remote repository (usually named `origin`), use:
+    ```bash
+    git push origin v1.0.0
+    ```
+
+    Alternatively, you can push all of your local tags at once:
+    ```bash
+    git push --tags
+    ```
+Pushing a new tag will trigger the GitHub Actions workflow to build and publish a new Docker image with the corresponding version.
 
 ## Local Development
 
-If you want to run the services without Docker, you can install the dependencies from `requirements.txt` and run the applications directly.
+If you want to run the application without Docker, you can install the dependencies from `requirements.txt` and run the application directly in the desired mode.
 
 **Install dependencies:**
 
@@ -107,16 +125,18 @@ If you want to run the services without Docker, you can install the dependencies
 pip install -r requirements.txt
 ```
 
-**Run the web service:**
+**Run in HTTP mode:**
 
 ```bash
-gunicorn --bind 0.0.0.0:8080 main:app
+export MODE=http
+python app.py
 ```
 
-**Run the MQTT publisher:**
+**Run in MQTT mode:**
 
 ```bash
+export MODE=mqtt
 export STOP_CODE=your_stop_code
 export MQTT_HOST=your_mqtt_broker_host
-python mqtt_publisher.py
+python app.py
 ```
