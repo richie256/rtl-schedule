@@ -70,6 +70,7 @@ MQTT_PASSWORD=your_mqtt_password
 MQTT_USE_TLS=false
 HASS_DISCOVERY_ENABLED=false
 HASS_DISCOVERY_PREFIX=homeassistant
+MQTT_REFRESH_TOPIC=rtl/schedule/refresh
 ```
 
 Then run the container with the following command:
@@ -83,6 +84,12 @@ docker run --env-file .env -v ./data:/data -e MODE=mqtt rtl-schedule
     -   Every 10 seconds during rush hours (weekdays 6:00-9:00 and 15:00-18:00).
     -   Every 60 seconds at all other times.
 -   **Payload:** The message payload is a JSON object containing schedule information.
+
+#### MQTT Refresh Action
+
+This application supports a refresh action via MQTT. When a message is published to the `MQTT_REFRESH_TOPIC` (by default, `rtl/schedule/refresh`), the application will immediately publish the latest bus schedule. After that, it will switch to a high-frequency update mode, publishing every 5 seconds for the next 10 minutes. The payload of the refresh message is ignored.
+
+This is useful if you want to get an immediate update on the bus schedule without waiting for the next scheduled publication.
 
 ## Unit Tests
 
