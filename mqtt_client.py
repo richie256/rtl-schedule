@@ -86,7 +86,7 @@ def get_mqtt_config() -> dict:
 def publish_schedule(client, rtl_data, stop_id, config):
     """Fetches and publishes the next bus stop information."""
     current_datetime = datetime.datetime.now().replace(microsecond=0)
-    next_stop_row = rtl_data.get_next_stop(stop_id, current_datetime)
+    next_stop_row = rtl_data.get_next_stop(stop_id, current_datetime, stop_code=config['stop_code'])
 
     if next_stop_row is not None:
         difference = next_stop_row.arrival_datetime - current_datetime

@@ -45,7 +45,7 @@ class TestIssueReproduction(unittest.TestCase):
 
         parser = ParseRTLData()
         test_datetime = datetime.datetime(2026, 3, 15, 9, 0, 0)
-        next_stop = parser.get_next_stop(1, test_datetime)
+        next_stop = parser.get_next_stop(1, test_datetime, stop_code=123)
         
         self.assertIsNotNone(next_stop)
         self.assertEqual(next_stop.service_id, 2)
@@ -69,7 +69,7 @@ class TestIssueReproduction(unittest.TestCase):
         
         # Should raise NoServiceFoundError (caught by get_next_stop and returning None)
         # after failing to find a service even after a "forced refresh" (which we mock here as just returning the same content)
-        next_stop = parser.get_next_stop(1, test_datetime)
+        next_stop = parser.get_next_stop(1, test_datetime, stop_code=123)
         self.assertIsNone(next_stop)
 
     @patch('data_parser.requests.get')
@@ -94,7 +94,7 @@ class TestIssueReproduction(unittest.TestCase):
         test_datetime = datetime.datetime(2026, 3, 15, 9, 0, 0)
         
         # This should NOT trigger a refresh anymore
-        next_stop = parser.get_next_stop(1, test_datetime)
+        next_stop = parser.get_next_stop(1, test_datetime, stop_code=123)
         
         self.assertIsNone(next_stop)
         # Should still be 1 (only the initial download)
