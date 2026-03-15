@@ -36,7 +36,13 @@ class ParseRTLData:
                 self.calendar = read_csv(my_zip.open('calendar.txt'))
                 self.stop_times = read_csv(my_zip.open('stop_times.txt'), index_col='stop_id')
                 self.trips = read_csv(my_zip.open('trips.txt'))
+                
+                # Calculate global schedule range for diagnostics
+                self.min_date = self.calendar['start_date'].min()
+                self.max_date = self.calendar['end_date'].max()
+
                 _LOGGER.info(f"Successfully loaded stops ({len(self.stops)}), calendar ({len(self.calendar)}), stop_times ({len(self.stop_times)}), and trips ({len(self.trips)})")
+                _LOGGER.info(f"Global GTFS schedule range: {self.min_date} to {self.max_date}")
                 
                 # Load calendar_dates if it exists (it's optional in GTFS but common in RTL)
                 try:
@@ -192,14 +198,14 @@ class ParseRTLData:
             today_service_id = self._get_service_id(parm_datetime.date())
         except NoServiceFoundError as e:
             min_d, max_d = self._get_stop_date_range(stop_id)
-            _LOGGER.error(f"No service found for {parm_datetime.date()}: {e}. Available schedule for stop {display_stop} ranges from {min_d} to {max_d}")
+            _LOGGER.error(f"No service found for {parm_datetime.date()}: {e}. Global GTFS range: {self.min_date} to {self.max_date}. Stop {display_stop} range: {min_d} to {max_d}")
             return None
 
         today_schedule = self._get_today_schedule(today_service_id, stop_id)
         
         if today_schedule.empty:
             min_d, max_d = self._get_stop_date_range(stop_id)
-            _LOGGER.info(f"No schedule found for service_id {today_service_id} and stop {display_stop}. Available schedule for stop {display_stop} ranges from {min_d} to {max_d}")
+            _LOGGER.info(f"No schedule found for service_id {today_service_id} and stop {display_stop}. Global GTFS range: {self.min_date} to {self.max_date}. Stop {display_stop} range: {min_d} to {max_d}")
             return None
 
         today_schedule_with_arrivals = self._calculate_arrival_datetimes(today_schedule, parm_datetime.date())
