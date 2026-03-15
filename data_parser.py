@@ -9,6 +9,7 @@ import pandas
 
 from const import _LOGGER, RTL_GTFS_URL, RTL_GTFS_ZIP_FILE
 from util import is_file_expired
+from hastus_scraper import HastusScraper
 
 class NoServiceFoundError(ValueError):
     """Exception raised when no service is found for a given date."""
@@ -21,6 +22,7 @@ class ParseRTLData:
         
         self.data_dir = os.environ.get("GTFS_DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
         self.file_path = os.path.join(self.data_dir, self.schedule_zipfile)
+        self.scraper = HastusScraper()
         self._load_data()
 
     def _load_data(self, force_download=False):
@@ -196,24 +198,36 @@ class ParseRTLData:
 
         try:
             today_service_id = self._get_service_id(parm_datetime.date())
+            today_schedule = self._get_today_schedule(today_service_id, stop_id)
+            
+            if today_schedule.empty:
+                raise NoServiceFoundError(f"Empty schedule for service_id {today_service_id}")
+
+            today_schedule_with_arrivals = self._calculate_arrival_datetimes(today_schedule, parm_datetime.date())
+            next_stop = today_schedule_with_arrivals[today_schedule_with_arrivals['arrival_datetime'] > parm_datetime]
+
+            if not next_stop.empty:
+                return next_stop.iloc[0]
+            
+            _LOGGER.info(f"No more buses in GTFS for stop {display_stop} after {parm_datetime}")
+
         except NoServiceFoundError as e:
-            min_d, max_d = self._get_stop_date_range(stop_id)
-            _LOGGER.error(f"No service found for {parm_datetime.date()}: {e}. Global GTFS range: {self.min_date} to {self.max_date}. Stop {display_stop} range: {min_d} to {max_d}")
-            return None
+            _LOGGER.info(f"GTFS check failed for {parm_datetime.date()}: {e}. Trying live scraper fallback...")
+            
+        # Fallback to Hastus Scraper
+        live_arrivals = self.scraper.get_schedule(stop_id, parm_datetime.date())
+        if live_arrivals:
+            _LOGGER.info(f"Found {len(live_arrivals)} arrivals via live scraper for stop {display_stop}")
+            for arrival_dt in live_arrivals:
+                if arrival_dt > parm_datetime:
+                    # Return a Series-like object compatible with existing code
+                    return Series({
+                        'arrival_datetime': arrival_dt,
+                        'arrival_time': arrival_dt.strftime("%H:%M:%S"),
+                        'route_id': 0, # Scraper doesn't easily distinguish route_id yet
+                        'trip_headsign': "Live Schedule"
+                    })
 
-        today_schedule = self._get_today_schedule(today_service_id, stop_id)
-        
-        if today_schedule.empty:
-            min_d, max_d = self._get_stop_date_range(stop_id)
-            _LOGGER.info(f"No schedule found for service_id {today_service_id} and stop {display_stop}. Global GTFS range: {self.min_date} to {self.max_date}. Stop {display_stop} range: {min_d} to {max_d}")
-            return None
-
-        today_schedule_with_arrivals = self._calculate_arrival_datetimes(today_schedule, parm_datetime.date())
-        
-        next_stop = today_schedule_with_arrivals[today_schedule_with_arrivals['arrival_datetime'] > parm_datetime]
-
-        if not next_stop.empty:
-            return next_stop.iloc[0]
-        
-        _LOGGER.info(f"No more buses for stop_id {stop_id} after {parm_datetime}")
+        min_d, max_d = self._get_stop_date_range(stop_id)
+        _LOGGER.error(f"No service found for {parm_datetime.date()} (GTFS & Live). Global GTFS range: {self.min_date} to {self.max_date}. Stop {display_stop} range: {min_d} to {max_d}")
         return None

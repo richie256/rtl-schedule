@@ -74,31 +74,31 @@ class TestIssueReproduction(unittest.TestCase):
 
     @patch('data_parser.requests.get')
     @patch('data_parser.is_file_expired', return_value=False)
-    def test_no_refresh_on_no_service_found(self, mock_is_file_expired, mock_requests_get):
-        # 1. Initial data without March 15th 2026
-        # March 15 2026 is a Sunday
-        calendar_v1 = 'service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n1,1,1,1,1,1,0,0,20260101,20260310'
+    @patch('data_parser.HastusScraper.get_schedule')
+    def test_scraper_fallback(self, mock_get_schedule, mock_is_file_expired, mock_requests_get):
+        # 1. GTFS data without March 15th
+        calendar = 'service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n1,1,1,1,1,1,0,0,20260101,20260310'
+        zip_content = self.create_gtfs_zip(calendar)
         
-        zip_v1 = self.create_gtfs_zip(calendar_v1)
+        mock_response = MagicMock()
+        mock_response.content = zip_content
+        mock_requests_get.return_value = mock_response
 
-        # Download returns v1
-        mock_response_v1 = MagicMock()
-        mock_response_v1.content = zip_v1
-        mock_requests_get.return_value = mock_response_v1
+        # 2. Scraper returns a time for March 15th
+        target_date = datetime.date(2026, 3, 15)
+        arrival_time = datetime.datetime.combine(target_date, datetime.time(10, 30))
+        mock_get_schedule.return_value = [arrival_time]
 
-        # Initialize parser (should call download for v1)
         parser = ParseRTLData()
-        self.assertEqual(mock_requests_get.call_count, 1)
-
-        # Attempt to get next stop for March 15th 2026
         test_datetime = datetime.datetime(2026, 3, 15, 9, 0, 0)
         
-        # This should NOT trigger a refresh anymore
+        # Should fallback to scraper
         next_stop = parser.get_next_stop(1, test_datetime, stop_code=123)
         
-        self.assertIsNone(next_stop)
-        # Should still be 1 (only the initial download)
-        self.assertEqual(mock_requests_get.call_count, 1)
+        self.assertIsNotNone(next_stop)
+        self.assertEqual(next_stop.trip_headsign, "Live Schedule")
+        self.assertEqual(next_stop.arrival_time, "10:30:00")
+        mock_get_schedule.assert_called_once_with(1, target_date)
 
 if __name__ == '__main__':
     unittest.main()
