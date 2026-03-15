@@ -35,6 +35,15 @@ class ParseRTLData:
                 self.calendar = read_csv(my_zip.open('calendar.txt'))
                 self.stop_times = read_csv(my_zip.open('stop_times.txt'), index_col='stop_id')
                 self.trips = read_csv(my_zip.open('trips.txt'))
+                
+                # Load calendar_dates if it exists (it's optional in GTFS but common in RTL)
+                try:
+                    self.calendar_dates = read_csv(my_zip.open('calendar_dates.txt'))
+                    _LOGGER.info("Loaded calendar_dates.txt")
+                except KeyError:
+                    self.calendar_dates = pandas.DataFrame(columns=['service_id', 'date', 'exception_type'])
+                    _LOGGER.info("calendar_dates.txt not found in GTFS, using empty DataFrame")
+
         except FileNotFoundError:
             _LOGGER.error(f"GTFS file not found at {self.file_path}. Please check the file path and permissions.")
             raise
@@ -64,25 +73,46 @@ class ParseRTLData:
         return self.stops.loc[stop_code, "stop_id"]
 
     def _get_service_id(self, date: datetime.date) -> int:
-        """ Retrieve the service_id for a given date """
+        """ Retrieve the service_id for a given date, handling exceptions in calendar_dates.txt """
         curr_weekday = date.weekday()
         curr_date_int = int(date.strftime("%Y%m%d"))
 
+        # 1. Check calendar_dates.txt for explicit additions (exception_type=1)
+        if not self.calendar_dates.empty:
+            added_service = self.calendar_dates[
+                (self.calendar_dates["date"] == curr_date_int) &
+                (self.calendar_dates["exception_type"] == 1)
+            ]
+            if not added_service.empty:
+                return added_service.iloc[0]["service_id"]
+
+        # 2. Check calendar.txt for regular service
         weekday_map = {
             0: "monday", 1: "tuesday", 2: "wednesday", 3: "thursday",
             4: "friday", 5: "saturday", 6: "sunday"
         }
-        
         weekday_str = weekday_map.get(curr_weekday)
 
         if weekday_str:
-            service = self.calendar[
+            regular_services = self.calendar[
                 (self.calendar[weekday_str] == 1) &
                 (self.calendar["end_date"] >= curr_date_int) &
                 (self.calendar["start_date"] <= curr_date_int)
             ]
-            if not service.empty:
-                return service.iloc[0]["service_id"]
+            
+            # 3. Filter out regular services that are explicitly removed in calendar_dates.txt (exception_type=2)
+            for _, service_row in regular_services.iterrows():
+                service_id = service_row["service_id"]
+                if not self.calendar_dates.empty:
+                    removed_service = self.calendar_dates[
+                        (self.calendar_dates["service_id"] == service_id) &
+                        (self.calendar_dates["date"] == curr_date_int) &
+                        (self.calendar_dates["exception_type"] == 2)
+                    ]
+                    if not removed_service.empty:
+                        continue # This service is removed for today
+                
+                return service_id
             
         raise NoServiceFoundError(f"No service found for date {date}")
 
