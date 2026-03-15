@@ -15,25 +15,34 @@ class ParseRTLData:
         self.schedule_zipfile = RTL_GTFS_ZIP_FILE
         _LOGGER.info(f"ParseRTLData init")
         
-        data_dir = os.environ.get("GTFS_DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
-        file = os.path.join(data_dir, self.schedule_zipfile)
+        self.data_dir = os.environ.get("GTFS_DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
+        self.file_path = os.path.join(self.data_dir, self.schedule_zipfile)
+        self._load_data()
 
+    def _load_data(self, force_download=False):
+        """Download and load GTFS data into memory."""
         try:
-            if not (os.path.isfile(file)) or is_file_expired(file):
-                self._download_gtfs_file(file)
+            if force_download or not (os.path.isfile(self.file_path)) or is_file_expired(self.file_path):
+                self._download_gtfs_file(self.file_path)
                 _LOGGER.info(f"Downloaded a new zip file from [{RTL_GTFS_URL}]")
 
-            with zipfile.ZipFile(file) as my_zip:
+            with zipfile.ZipFile(self.file_path) as my_zip:
                 self.stops = read_csv(my_zip.open('stops.txt'), index_col='stop_code')
                 self.calendar = read_csv(my_zip.open('calendar.txt'))
                 self.stop_times = read_csv(my_zip.open('stop_times.txt'), index_col='stop_id')
                 self.trips = read_csv(my_zip.open('trips.txt'))
         except FileNotFoundError:
-            _LOGGER.error(f"GTFS file not found at {file}. Please check the file path and permissions.")
+            _LOGGER.error(f"GTFS file not found at {self.file_path}. Please check the file path and permissions.")
             raise
         except (zipfile.BadZipFile, pandas.errors.ParserError) as e:
             _LOGGER.error(f"An error occurred while parsing the GTFS file: {e}")
             raise
+
+    def refresh(self, force=False):
+        """Check if data needs to be refreshed and reload if necessary."""
+        if force or is_file_expired(self.file_path):
+            _LOGGER.info(f"Refreshing GTFS data (force={force})...")
+            self._load_data(force_download=force)
 
     @staticmethod
     def _download_gtfs_file(zipfile_location) -> None:
@@ -44,6 +53,7 @@ class ParseRTLData:
 
     def get_stop_id(self, stop_code: int) -> int:
         """ Retrieve the stop_id based on a stop_code """
+        self.refresh()
         if stop_code not in self.stops.index:
             _LOGGER.error(f"Stop code {stop_code} not found in the GTFS data.")
             return None
@@ -100,13 +110,20 @@ class ParseRTLData:
 
     def get_next_stop(self, stop_id: int, parm_datetime: datetime.datetime) -> Optional[Series]:
         """Retrieve the next stop information"""
+        self.refresh()
         _LOGGER.info(f"Retrieving next stop for stop_id {stop_id} at {parm_datetime}")
 
         try:
             today_service_id = self._get_service_id(parm_datetime.date())
-        except ValueError as e:
-            _LOGGER.error(e)
-            return None
+        except ValueError:
+            # If no service found, try refreshing data once just in case the file was updated but not yet expired
+            _LOGGER.info(f"No service found for {parm_datetime.date()}, attempting a forced refresh.")
+            self.refresh(force=True)
+            try:
+                today_service_id = self._get_service_id(parm_datetime.date())
+            except ValueError as e:
+                _LOGGER.error(e)
+                return None
 
         today_schedule = self._get_today_schedule(today_service_id, stop_id)
         
