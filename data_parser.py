@@ -178,21 +178,28 @@ class ParseRTLData:
     def get_next_stop(self, stop_id: int, parm_datetime: datetime.datetime, stop_code: Optional[int] = None) -> Optional[Series]:
         """Retrieve the next stop information"""
         self.refresh()
-        display_stop = stop_code if stop_code else stop_id
+        
+        # If stop_code isn't provided, try to find it from stop_id (inefficient but good for logs)
+        if stop_code is None:
+            matches = self.stops[self.stops['stop_id'] == stop_id]
+            if not matches.empty:
+                stop_code = matches.index[0]
+
+        display_stop = f"{stop_code} (ID: {stop_id})" if stop_code else f"ID: {stop_id}"
         _LOGGER.info(f"Retrieving next stop for stop {display_stop} at {parm_datetime}")
 
         try:
             today_service_id = self._get_service_id(parm_datetime.date())
         except NoServiceFoundError as e:
             min_d, max_d = self._get_stop_date_range(stop_id)
-            _LOGGER.error(f"No service found for {parm_datetime.date()}: {e}. Available schedule for stop {display_stop} (ID: {stop_id}) ranges from {min_d} to {max_d}")
+            _LOGGER.error(f"No service found for {parm_datetime.date()}: {e}. Available schedule for stop {display_stop} ranges from {min_d} to {max_d}")
             return None
 
         today_schedule = self._get_today_schedule(today_service_id, stop_id)
         
         if today_schedule.empty:
             min_d, max_d = self._get_stop_date_range(stop_id)
-            _LOGGER.info(f"No schedule found for service_id {today_service_id} and stop {display_stop}. Available schedule for stop {display_stop} (ID: {stop_id}) ranges from {min_d} to {max_d}")
+            _LOGGER.info(f"No schedule found for service_id {today_service_id} and stop {display_stop}. Available schedule for stop {display_stop} ranges from {min_d} to {max_d}")
             return None
 
         today_schedule_with_arrivals = self._calculate_arrival_datetimes(today_schedule, parm_datetime.date())
