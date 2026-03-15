@@ -31,15 +31,17 @@ class ParseRTLData:
                 self._download_gtfs_file(self.file_path)
 
             with zipfile.ZipFile(self.file_path) as my_zip:
+                _LOGGER.info(f"Loading GTFS data from {self.file_path} into memory...")
                 self.stops = read_csv(my_zip.open('stops.txt'), index_col='stop_code')
                 self.calendar = read_csv(my_zip.open('calendar.txt'))
                 self.stop_times = read_csv(my_zip.open('stop_times.txt'), index_col='stop_id')
                 self.trips = read_csv(my_zip.open('trips.txt'))
+                _LOGGER.info(f"Successfully loaded stops ({len(self.stops)}), calendar ({len(self.calendar)}), stop_times ({len(self.stop_times)}), and trips ({len(self.trips)})")
                 
                 # Load calendar_dates if it exists (it's optional in GTFS but common in RTL)
                 try:
                     self.calendar_dates = read_csv(my_zip.open('calendar_dates.txt'))
-                    _LOGGER.info("Loaded calendar_dates.txt")
+                    _LOGGER.info(f"Loaded calendar_dates.txt ({len(self.calendar_dates)} entries)")
                 except KeyError:
                     self.calendar_dates = pandas.DataFrame(columns=['service_id', 'date', 'exception_type'])
                     _LOGGER.info("calendar_dates.txt not found in GTFS, using empty DataFrame")

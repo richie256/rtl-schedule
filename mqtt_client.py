@@ -9,9 +9,9 @@ from paho.mqtt.client import CallbackAPIVersion
 from pythonjsonlogger import jsonlogger
 
 from data_parser import ParseRTLData
+from const import _LOGGER
 
 # Configure logging
-_LOGGER = logging.getLogger("rtl-mqtt-publisher")
 logHandler = logging.StreamHandler()
 formatter = jsonlogger.JsonFormatter()
 logHandler.setFormatter(formatter)
