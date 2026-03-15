@@ -27,8 +27,9 @@ def gtfs_zip_file():
     if os.path.exists(RTL_GTFS_ZIP_FILE):
         os.remove(RTL_GTFS_ZIP_FILE)
 
+@patch('data_parser.HastusScraper')
 @patch('data_parser.is_file_expired', return_value=False)
-def test_init_loads_data(mock_is_file_expired, gtfs_zip_file):
+def test_init_loads_data(mock_is_file_expired, mock_hastus_scraper, gtfs_zip_file):
     parser = ParseRTLData()
     assert isinstance(parser.stops, pd.DataFrame)
     assert isinstance(parser.calendar, pd.DataFrame)
@@ -39,9 +40,10 @@ def test_init_loads_data(mock_is_file_expired, gtfs_zip_file):
     assert not parser.stop_times.empty
     assert not parser.trips.empty
 
+@patch('data_parser.HastusScraper')
 @patch('data_parser.requests.get')
 @patch('data_parser.is_file_expired', return_value=True)
-def test_init_downloads_new_file(mock_is_file_expired, mock_requests_get, gtfs_zip_file):
+def test_init_downloads_new_file(mock_is_file_expired, mock_requests_get, mock_hastus_scraper, gtfs_zip_file):
     # Mock the response from requests.get
     mock_response = MagicMock()
     # Create a valid zip file in memory
@@ -63,22 +65,25 @@ def test_init_downloads_new_file(mock_is_file_expired, mock_requests_get, gtfs_z
 
     mock_requests_get.assert_called_once()
 
+@patch('data_parser.HastusScraper')
 @patch('data_parser.is_file_expired', return_value=False)
-def test_get_stop_id(mock_is_file_expired, gtfs_zip_file):
+def test_get_stop_id(mock_is_file_expired, mock_hastus_scraper, gtfs_zip_file):
     parser = ParseRTLData()
     stop_id = parser.get_stop_id(123)
     assert stop_id == 1
 
+@patch('data_parser.HastusScraper')
 @patch('data_parser.is_file_expired', return_value=False)
-def test_get_service_id(mock_is_file_expired, gtfs_zip_file):
+def test_get_service_id(mock_is_file_expired, mock_hastus_scraper, gtfs_zip_file):
     parser = ParseRTLData()
     # Monday in 2025
     test_date = datetime.date(2025, 9, 29)
     service_id = parser._get_service_id(test_date)
     assert service_id == 1
 
+@patch('data_parser.HastusScraper')
 @patch('data_parser.is_file_expired', return_value=False)
-def test_get_next_stop(mock_is_file_expired, gtfs_zip_file):
+def test_get_next_stop(mock_is_file_expired, mock_hastus_scraper, gtfs_zip_file):
     parser = ParseRTLData()
     # Monday in 2025 at 9:00 AM
     test_datetime = datetime.datetime(2025, 9, 29, 9, 0, 0)
