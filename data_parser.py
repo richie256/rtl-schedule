@@ -10,6 +10,10 @@ import pandas
 from const import _LOGGER, RTL_GTFS_URL, RTL_GTFS_ZIP_FILE
 from util import is_file_expired
 
+class NoServiceFoundError(ValueError):
+    """Exception raised when no service is found for a given date."""
+    pass
+
 class ParseRTLData:
     def __init__(self):
         self.schedule_zipfile = RTL_GTFS_ZIP_FILE
@@ -23,8 +27,8 @@ class ParseRTLData:
         """Download and load GTFS data into memory."""
         try:
             if force_download or not (os.path.isfile(self.file_path)) or is_file_expired(self.file_path):
+                _LOGGER.info(f"Downloading a new zip file from [{RTL_GTFS_URL}]")
                 self._download_gtfs_file(self.file_path)
-                _LOGGER.info(f"Downloaded a new zip file from [{RTL_GTFS_URL}]")
 
             with zipfile.ZipFile(self.file_path) as my_zip:
                 self.stops = read_csv(my_zip.open('stops.txt'), index_col='stop_code')
@@ -80,7 +84,7 @@ class ParseRTLData:
             if not service.empty:
                 return service.iloc[0]["service_id"]
             
-        raise ValueError(f"No service found for date {date}")
+        raise NoServiceFoundError(f"No service found for date {date}")
 
     def _get_today_schedule(self, service_id: int, stop_id: int):
         """Get the schedule for a given service ID and stop ID."""
@@ -115,19 +119,21 @@ class ParseRTLData:
 
         try:
             today_service_id = self._get_service_id(parm_datetime.date())
-        except ValueError:
+        except NoServiceFoundError:
             # If no service found, try refreshing data once just in case the file was updated but not yet expired
             _LOGGER.info(f"No service found for {parm_datetime.date()}, attempting a forced refresh.")
             self.refresh(force=True)
             try:
                 today_service_id = self._get_service_id(parm_datetime.date())
-            except ValueError as e:
-                _LOGGER.error(e)
+                _LOGGER.info(f"Successfully found service_id {today_service_id} after refresh.")
+            except NoServiceFoundError as e:
+                _LOGGER.error(f"Still no service found for {parm_datetime.date()} after refresh: {e}")
                 return None
 
         today_schedule = self._get_today_schedule(today_service_id, stop_id)
         
         if today_schedule.empty:
+            _LOGGER.info(f"No schedule found for service_id {today_service_id} and stop_id {stop_id}")
             return None
 
         today_schedule_with_arrivals = self._calculate_arrival_datetimes(today_schedule, parm_datetime.date())
@@ -137,4 +143,5 @@ class ParseRTLData:
         if not next_stop.empty:
             return next_stop.iloc[0]
         
+        _LOGGER.info(f"No more buses for stop_id {stop_id} after {parm_datetime}")
         return None

@@ -5,7 +5,7 @@ import datetime
 from zipfile import ZipFile
 from io import BytesIO
 
-from data_parser import ParseRTLData
+from data_parser import ParseRTLData, NoServiceFoundError
 from const import RTL_GTFS_ZIP_FILE
 
 class TestIssueReproduction(unittest.TestCase):
