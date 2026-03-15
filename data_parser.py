@@ -144,6 +144,37 @@ class ParseRTLData:
         schedule['arrival_datetime'] = schedule.apply(calculate_arrival, axis=1)
         return schedule.dropna(subset=['arrival_datetime']).sort_values(by=['arrival_datetime'])
 
+    def _get_stop_date_range(self, stop_id: int):
+        """Find the oldest and newest dates in the schedule for a given stop_id."""
+        # 1. Get all trip_ids for this stop
+        stop_times_for_stop = self.stop_times.loc[self.stop_times.index == stop_id]
+        if stop_times_for_stop.empty:
+            return None, None
+        
+        trip_ids = stop_times_for_stop['trip_id'].unique()
+        
+        # 2. Get all service_ids for these trips
+        service_ids = self.trips[self.trips['trip_id'].isin(trip_ids)]['service_id'].unique()
+        
+        # 3. Find date ranges in calendar.txt
+        relevant_calendar = self.calendar[self.calendar['service_id'].isin(service_ids)]
+        min_date = relevant_calendar['start_date'].min() if not relevant_calendar.empty else None
+        max_date = relevant_calendar['end_date'].max() if not relevant_calendar.empty else None
+        
+        # 4. Find date ranges in calendar_dates.txt
+        if not self.calendar_dates.empty:
+            relevant_dates = self.calendar_dates[self.calendar_dates['service_id'].isin(service_ids)]
+            if not relevant_dates.empty:
+                min_exception = relevant_dates['date'].min()
+                max_exception = relevant_dates['date'].max()
+                
+                if min_date is None or min_exception < min_date:
+                    min_date = min_exception
+                if max_date is None or max_exception > max_date:
+                    max_date = max_exception
+        
+        return min_date, max_date
+
     def get_next_stop(self, stop_id: int, parm_datetime: datetime.datetime) -> Optional[Series]:
         """Retrieve the next stop information"""
         self.refresh()
@@ -151,21 +182,16 @@ class ParseRTLData:
 
         try:
             today_service_id = self._get_service_id(parm_datetime.date())
-        except NoServiceFoundError:
-            # If no service found, try refreshing data once just in case the file was updated but not yet expired
-            _LOGGER.info(f"No service found for {parm_datetime.date()}, attempting a forced refresh.")
-            self.refresh(force=True)
-            try:
-                today_service_id = self._get_service_id(parm_datetime.date())
-                _LOGGER.info(f"Successfully found service_id {today_service_id} after refresh.")
-            except NoServiceFoundError as e:
-                _LOGGER.error(f"Still no service found for {parm_datetime.date()} after refresh: {e}")
-                return None
+        except NoServiceFoundError as e:
+            min_d, max_d = self._get_stop_date_range(stop_id)
+            _LOGGER.error(f"No service found for {parm_datetime.date()}: {e}. Available schedule for stop {stop_id} ranges from {min_d} to {max_d}")
+            return None
 
         today_schedule = self._get_today_schedule(today_service_id, stop_id)
         
         if today_schedule.empty:
-            _LOGGER.info(f"No schedule found for service_id {today_service_id} and stop_id {stop_id}")
+            min_d, max_d = self._get_stop_date_range(stop_id)
+            _LOGGER.info(f"No schedule found for service_id {today_service_id} and stop_id {stop_id}. Available schedule for stop {stop_id} ranges from {min_d} to {max_d}")
             return None
 
         today_schedule_with_arrivals = self._calculate_arrival_datetimes(today_schedule, parm_datetime.date())
