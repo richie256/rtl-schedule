@@ -10,3 +10,4 @@ pytest-cov
 pytest-mock
 httpx
 beautifulsoup4
+pip-system-certs
