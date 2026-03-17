@@ -5,6 +5,8 @@ from typing import Optional, List, Dict
 from bs4 import BeautifulSoup
 import re
 import urllib3
+import json
+import os
 
 # Suppress only the single InsecureRequestWarning from urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -13,12 +15,14 @@ _LOGGER = logging.getLogger("rtl-schedule")
 
 class HastusScraper:
     BASE_URL = "https://madprep_i.rtl-longueuil.qc.ca/madOper.php"
+    CACHE_FILE = "data/hastus_cache.json"
     
     def __init__(self):
         self.buildtime = None
         self.stop_mappings = {} # stop_code (str) -> list of (feed_id:stop_id)
         # cache: (stop_id, pattern_id, week_start_date) -> { 'weekday': [...], 'samedi': [...], 'dimanche': [...] }
         self.schedule_cache = {} 
+        self._load_cache()
         self._initialize()
 
     def _initialize(self):
@@ -31,6 +35,52 @@ class HastusScraper:
             _LOGGER.info(f"HastusScraper initialized with buildtime: {self.buildtime}")
         except Exception as e:
             _LOGGER.error(f"Failed to initialize HastusScraper: {e}")
+
+    def _load_cache(self):
+        """Load cache from disk."""
+        if not os.path.exists(self.CACHE_FILE):
+            return
+        
+        try:
+            with open(self.CACHE_FILE, 'r') as f:
+                raw_cache = json.load(f)
+                
+            self.schedule_cache = {}
+            for key_str, data in raw_cache.items():
+                # Key format: "stop|pattern|week_start"
+                parts = key_str.split('|')
+                if len(parts) != 3: continue
+                stop, pattern, week_start_str = parts
+                week_start = datetime.date.fromisoformat(week_start_str)
+                key = (stop, pattern, week_start)
+                
+                # Convert time strings back to datetime.time
+                weekly_data = {}
+                for cat, times in data.items():
+                    weekly_data[cat] = [datetime.time.fromisoformat(t) for t in times]
+                
+                self.schedule_cache[key] = weekly_data
+            _LOGGER.info(f"Loaded {len(self.schedule_cache)} entries from disk cache.")
+        except Exception as e:
+            _LOGGER.error(f"Failed to load cache from disk: {e}")
+
+    def _save_cache(self):
+        """Save cache to disk."""
+        try:
+            os.makedirs(os.path.dirname(self.CACHE_FILE), exist_ok=True)
+            serializable_cache = {}
+            for (stop, pattern, week_start), data in self.schedule_cache.items():
+                key_str = f"{stop}|{pattern}|{week_start.isoformat()}"
+                serializable_data = {}
+                for cat, times in data.items():
+                    serializable_data[cat] = [t.isoformat() for t in times]
+                serializable_cache[key_str] = serializable_data
+                
+            with open(self.CACHE_FILE, 'w') as f:
+                json.dump(serializable_cache, f, indent=2)
+            _LOGGER.info("Saved cache to disk.")
+        except Exception as e:
+            _LOGGER.error(f"Failed to save cache to disk: {e}")
 
     def fetch_stop_mappings(self):
         """Fetch all stop mappings from the server."""
@@ -53,6 +103,18 @@ class HastusScraper:
         except Exception as e:
             _LOGGER.error(f"Failed to fetch stop mappings: {e}")
 
+    def get_stop_code_from_id(self, stop_id: int) -> Optional[str]:
+        """Find the public stop code for a given internal stop_id."""
+        if not self.stop_mappings:
+            self.fetch_stop_mappings()
+        
+        target_id_suffix = f":{stop_id}"
+        for code, ids in self.stop_mappings.items():
+            for internal_id in ids:
+                if internal_id.endswith(target_id_suffix):
+                    return code
+        return None
+
     def get_stop_patterns(self, stop_code: str) -> List[Dict]:
         """Fetch available patterns/routes for a given stop code."""
         if not self.stop_mappings:
@@ -60,6 +122,7 @@ class HastusScraper:
         
         internal_ids = self.stop_mappings.get(stop_code, [])
         if not internal_ids:
+            # Fallback to guessing feed 15 if not in mapping
             internal_ids = [f"15:{stop_code}"]
             
         patterns = []
@@ -76,7 +139,9 @@ class HastusScraper:
             except Exception as e:
                 _LOGGER.error(f"Failed to fetch patterns for {p_id}: {e}")
                 
-        return patterns
+        # Deduplicate patterns by 'pattern' ID
+        unique_patterns = {p['pattern']: p for p in patterns}.values()
+        return list(unique_patterns)
 
     def _parse_patterns_html(self, html: str) -> List[Dict]:
         """Parse the HTML from stops_patterns to extract urlHoraireArret parameters."""
@@ -106,7 +171,7 @@ class HastusScraper:
         cache_key = (params['stop'], params['pattern'], week_start)
         
         if cache_key in self.schedule_cache:
-            _LOGGER.info(f"Using cached schedule for {params['ligne']} on {date}")
+            _LOGGER.debug(f"Using cached schedule for {params['ligne']} on {date}")
             return self._get_times_from_cache(self.schedule_cache[cache_key], date)
 
         t_timestamp = int(datetime.datetime.combine(week_start, datetime.time.min).timestamp())
@@ -136,7 +201,11 @@ class HastusScraper:
             
             # Parse the whole week and cache it
             weekly_data = self._parse_html_weekly_schedule(response.text)
+            if not weekly_data['semaine'] and not weekly_data['samedi'] and not weekly_data['dimanche']:
+                _LOGGER.warning(f"No times found in scraped HTML for {params['ligne']}")
+                
             self.schedule_cache[cache_key] = weekly_data
+            self._save_cache()
             
             return self._get_times_from_cache(weekly_data, date)
         except Exception as e:
@@ -156,12 +225,7 @@ class HastusScraper:
             
         result = []
         for t in times:
-            actual_date = date
-            hour = t.hour
-            # Handle times like 24:33 (returned as 00:33 of next day by some systems, 
-            # but here we keep them as simple times and adjust date if needed)
-            # The current parser already handles 24:xx by adjusting the date.
-            result.append(datetime.datetime.combine(actual_date, t))
+            result.append(datetime.datetime.combine(date, t))
             
         return sorted(result)
 
@@ -174,7 +238,13 @@ class HastusScraper:
         tables = soup.find_all('table', style=lambda s: s and 'border: 2px solid #AA3300' in s)
         
         for table in tables:
-            category_text = table.find('b').get_text(strip=True).lower()
+            header_row = table.find('tr')
+            if not header_row: continue
+            
+            category_cell = header_row.find('b')
+            if not category_cell: continue
+            
+            category_text = category_cell.get_text(strip=True).lower()
             category = None
             if 'semaine' in category_text:
                 category = 'semaine'
@@ -193,22 +263,28 @@ class HastusScraper:
                         match = re.match(r'(\d{1,2}):(\d{2})', time_str)
                         if match:
                             h, m = map(int, match.groups())
-                            # Store as time objects. We don't adjust date here, 
-                            # we'll do it when combining with the actual target date.
-                            # Note: datetime.time only goes up to 23:59.
-                            # If we see 24:xx or 25:xx, we store them as (h-24, m) 
-                            # but we need to know they are "next day".
-                            # For simplicity, let's store (hour, minute) tuples.
+                            # Store as time objects. 
                             weekly_data[category].append(datetime.time(h % 24, m))
                             
         return weekly_data
 
     def get_schedule(self, stop_id: int, date: datetime.date, feed_id: int = 15) -> List[datetime.datetime]:
-        """Legacy method (now redirects to cached version if possible)."""
-        params = {
-            'stop': f"{feed_id}:{stop_id}",
-            'pattern': f"{feed_id}:0:0", # Dummy pattern if unknown
-            'ligne': f"Stop {stop_id}",
-            'desc': 'Unknown'
-        }
-        return self.get_schedule_by_params(params, date)
+        """Smart fallback: discovers patterns for the stop and fetches all schedules."""
+        stop_code = self.get_stop_code_from_id(stop_id)
+        if not stop_code:
+            _LOGGER.error(f"Could not map internal stop_id {stop_id} to a stop code.")
+            return []
+            
+        _LOGGER.info(f"Fallback: Discovered stop code {stop_code} for ID {stop_id}")
+        patterns = self.get_stop_patterns(stop_code)
+        
+        if not patterns:
+            _LOGGER.warning(f"No patterns found for stop code {stop_code}")
+            return []
+            
+        all_arrivals = []
+        for p in patterns:
+            arrivals = self.get_schedule_by_params(p, date)
+            all_arrivals.extend(arrivals)
+            
+        return sorted(list(set(all_arrivals)))

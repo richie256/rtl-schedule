@@ -91,6 +91,17 @@ This application supports a refresh action via MQTT. When a message is published
 
 This is useful if you want to get an immediate update on the bus schedule without waiting for the next scheduled publication.
 
+## Hastus Scraper (Fallback Mode)
+
+When the primary GTFS data is unavailable or outdated, the application automatically switches to the **Hastus Scraper**. This scraper retrieves real-time official schedules directly from the RTL web portal.
+
+### Features
+
+- **Dynamic Stop Mapping:** Automatically converts public stop codes (e.g., `32752`) into internal system IDs used by the RTL backend.
+- **Weekly Caching:** To minimize network requests and respect the RTL's infrastructure, the scraper fetches a full week of data (Monday to Sunday) in a single request.
+- **Disk Persistence:** The fetched weekly schedules are saved to `data/hastus_cache.json`. This ensures that even after a container restart, the application can immediately provide schedules without re-scraping the web portal.
+- **Categorized Schedules:** Intelligent parsing that separates schedules into three categories: Weekdays (`semaine`), Saturdays (`samedi`), and Sundays (`dimanche`).
+
 ## Unit Tests
 
 To run the unit tests, execute the following command:
