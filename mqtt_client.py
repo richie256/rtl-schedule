@@ -95,11 +95,12 @@ def publish_schedule(client, rtl_data, stop_id, config):
         payload = {
             'nextstop_nbrmins': int(nbr_minutes),
             'nextstop_nbrsecs': int(nbr_seconds),
-            'route_id': int(next_stop_row.route_id),
+            'route_id': str(next_stop_row.route_id),
             'arrival_time': str(next_stop_row.arrival_time),
             'trip_headsign': str(next_stop_row.trip_headsign),
             'current_time': str(current_datetime.time()),
-            'stop_code': config['stop_code']
+            'stop_code': config['stop_code'],
+            'retrieve_method': str(next_stop_row.retrieve_method)
         }
         topic = 'home/schedule/bus_stop'
         client.publish(topic, json.dumps(payload))

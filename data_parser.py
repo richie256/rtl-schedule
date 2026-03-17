@@ -204,10 +204,20 @@ class ParseRTLData:
                 raise NoServiceFoundError(f"Empty schedule for service_id {today_service_id}")
 
             today_schedule_with_arrivals = self._calculate_arrival_datetimes(today_schedule, parm_datetime.date())
+            
+            # Filter for "Direction Terminus Panama" if requested
+            # Note: trip_headsign in GTFS usually contains the direction
+            target_direction = "Direction Terminus Panama"
+            today_schedule_with_arrivals = today_schedule_with_arrivals[
+                today_schedule_with_arrivals['trip_headsign'].str.contains(target_direction, case=False, na=False)
+            ]
+
             next_stop = today_schedule_with_arrivals[today_schedule_with_arrivals['arrival_datetime'] > parm_datetime]
 
             if not next_stop.empty:
-                return next_stop.iloc[0]
+                result = next_stop.iloc[0].copy()
+                result['retrieve_method'] = 'GTFS'
+                return result
             
             _LOGGER.info(f"No more buses in GTFS for stop {display_stop} after {parm_datetime}")
 
@@ -218,14 +228,15 @@ class ParseRTLData:
         live_arrivals = self.scraper.get_schedule(stop_id, parm_datetime.date())
         if live_arrivals:
             _LOGGER.info(f"Found {len(live_arrivals)} arrivals via live scraper for stop {display_stop}")
-            for arrival_dt in live_arrivals:
-                if arrival_dt > parm_datetime:
+            for arrival_obj in live_arrivals:
+                if arrival_obj['arrival_datetime'] > parm_datetime:
                     # Return a Series-like object compatible with existing code
                     return Series({
-                        'arrival_datetime': arrival_dt,
-                        'arrival_time': arrival_dt.strftime("%H:%M:%S"),
-                        'route_id': 0, # Scraper doesn't easily distinguish route_id yet
-                        'trip_headsign': "Live Schedule"
+                        'arrival_datetime': arrival_obj['arrival_datetime'],
+                        'arrival_time': arrival_obj['arrival_time'],
+                        'route_id': arrival_obj['route_id'],
+                        'trip_headsign': arrival_obj['trip_headsign'],
+                        'retrieve_method': 'live scraper'
                     })
 
         min_d, max_d = self._get_stop_date_range(stop_id)

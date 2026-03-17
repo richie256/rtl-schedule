@@ -1,7 +1,7 @@
 import requests
 import datetime
 import logging
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from bs4 import BeautifulSoup
 import re
 import urllib3
@@ -122,7 +122,6 @@ class HastusScraper:
         
         internal_ids = self.stop_mappings.get(stop_code, [])
         if not internal_ids:
-            # Fallback to guessing feed 15 if not in mapping
             internal_ids = [f"15:{stop_code}"]
             
         patterns = []
@@ -139,7 +138,6 @@ class HastusScraper:
             except Exception as e:
                 _LOGGER.error(f"Failed to fetch patterns for {p_id}: {e}")
                 
-        # Deduplicate patterns by 'pattern' ID
         unique_patterns = {p['pattern']: p for p in patterns}.values()
         return list(unique_patterns)
 
@@ -166,7 +164,6 @@ class HastusScraper:
         if not self.buildtime:
             self._initialize()
             
-        # Find the Monday of the week for caching
         week_start = date - datetime.timedelta(days=date.weekday())
         cache_key = (params['stop'], params['pattern'], week_start)
         
@@ -199,7 +196,6 @@ class HastusScraper:
             _LOGGER.info(f"Scraping weekly schedule for {params['ligne']} at {params['desc']} starting {week_start}")
             response = requests.get(self.BASE_URL, params=query_params, timeout=15, verify=False)
             
-            # Parse the whole week and cache it
             weekly_data = self._parse_html_weekly_schedule(response.text)
             if not weekly_data['semaine'] and not weekly_data['samedi'] and not weekly_data['dimanche']:
                 _LOGGER.warning(f"No times found in scraped HTML for {params['ligne']}")
@@ -214,7 +210,7 @@ class HastusScraper:
 
     def _get_times_from_cache(self, weekly_data: Dict[str, List[datetime.time]], date: datetime.date) -> List[datetime.datetime]:
         """Helper to convert cached time list to datetime list for a specific date."""
-        weekday = date.weekday() # 0=Mon, 5=Sat, 6=Sun
+        weekday = date.weekday()
         
         if weekday < 5:
             times = weekly_data.get('semaine', [])
@@ -234,7 +230,6 @@ class HastusScraper:
         soup = BeautifulSoup(html, 'html.parser')
         weekly_data = {'semaine': [], 'samedi': [], 'dimanche': []}
         
-        # Find all tables. Typically there are 3 tables for the 3 categories.
         tables = soup.find_all('table', style=lambda s: s and 'border: 2px solid #AA3300' in s)
         
         for table in tables:
@@ -254,8 +249,7 @@ class HastusScraper:
                 category = 'dimanche'
             
             if category:
-                # Find all time cells (first td in each row, except headers)
-                rows = table.find_all('tr')[2:] # Skip category header and sub-headers
+                rows = table.find_all('tr')[2:]
                 for row in rows:
                     cells = row.find_all('td')
                     if cells:
@@ -263,12 +257,11 @@ class HastusScraper:
                         match = re.match(r'(\d{1,2}):(\d{2})', time_str)
                         if match:
                             h, m = map(int, match.groups())
-                            # Store as time objects. 
                             weekly_data[category].append(datetime.time(h % 24, m))
                             
         return weekly_data
 
-    def get_schedule(self, stop_id: int, date: datetime.date, feed_id: int = 15) -> List[datetime.datetime]:
+    def get_schedule(self, stop_id: int, date: datetime.date, feed_id: int = 15) -> List[Dict[str, Any]]:
         """Smart fallback: discovers patterns for the stop and fetches all schedules."""
         stop_code = self.get_stop_code_from_id(stop_id)
         if not stop_code:
@@ -283,8 +276,28 @@ class HastusScraper:
             return []
             
         all_arrivals = []
+        # Filter for "Direction Terminus Panama" as requested
+        target_direction = "Direction Terminus Panama"
+        
         for p in patterns:
+            if target_direction not in p['ligne']:
+                _LOGGER.debug(f"Skipping pattern {p['ligne']} (not {target_direction})")
+                continue
+                
             arrivals = self.get_schedule_by_params(p, date)
-            all_arrivals.extend(arrivals)
             
-        return sorted(list(set(all_arrivals)))
+            # Extract route number from ligne string (e.g. " 44 Direction Terminus Panama" -> "44")
+            route_match = re.search(r'(\d+)', p['ligne'])
+            route_id = route_match.group(1) if route_match else "0"
+            
+            for a_dt in arrivals:
+                all_arrivals.append({
+                    'arrival_datetime': a_dt,
+                    'arrival_time': a_dt.strftime("%H:%M:%S"),
+                    'route_id': route_id,
+                    'trip_headsign': p['ligne'].strip()
+                })
+            
+        # Sort by arrival time
+        all_arrivals.sort(key=lambda x: x['arrival_datetime'])
+        return all_arrivals
