@@ -183,10 +183,10 @@ class ParseRTLData:
         
         return min_date, max_date
 
-    def get_next_stop(self, stop_id: int, parm_datetime: datetime.datetime, stop_code: Optional[int] = None) -> Optional[Series]:
-        """Retrieve the next stop information"""
+    def get_next_stop(self, stop_id: int, parm_datetime: datetime.datetime, stop_code: Optional[int] = None, is_lookahead: bool = False) -> Optional[Series]:
+        """Retrieve the next stop information, optionally looking ahead to the next day."""
         self.refresh()
-        
+
         # If stop_code isn't provided, try to find it from stop_id (inefficient but good for logs)
         if stop_code is None:
             matches = self.stops[self.stops['stop_id'] == stop_id]
@@ -199,14 +199,13 @@ class ParseRTLData:
         try:
             today_service_id = self._get_service_id(parm_datetime.date())
             today_schedule = self._get_today_schedule(today_service_id, stop_id)
-            
+
             if today_schedule.empty:
                 raise NoServiceFoundError(f"Empty schedule for service_id {today_service_id}")
 
             today_schedule_with_arrivals = self._calculate_arrival_datetimes(today_schedule, parm_datetime.date())
-            
+
             # Filter for "Direction Terminus Panama" if requested
-            # Note: trip_headsign in GTFS usually contains the direction
             target_direction = "Direction Terminus Panama"
             today_schedule_with_arrivals = today_schedule_with_arrivals[
                 today_schedule_with_arrivals['trip_headsign'].str.contains(target_direction, case=False, na=False)
@@ -218,12 +217,12 @@ class ParseRTLData:
                 result = next_stop.iloc[0].copy()
                 result['retrieve_method'] = 'GTFS'
                 return result
-            
+
             _LOGGER.info(f"No more buses in GTFS for stop {display_stop} after {parm_datetime}")
 
         except NoServiceFoundError as e:
             _LOGGER.info(f"GTFS check failed for {parm_datetime.date()}: {e}. Trying live scraper fallback...")
-            
+
         # Fallback to Hastus Scraper
         live_arrivals = self.scraper.get_schedule(stop_id, parm_datetime.date())
         if live_arrivals:
@@ -238,6 +237,16 @@ class ParseRTLData:
                         'trip_headsign': arrival_obj['trip_headsign'],
                         'retrieve_method': 'live scraper'
                     })
+
+        # --- Look-ahead logic ---
+        if not is_lookahead:
+            _LOGGER.info(f"No more buses for {parm_datetime.date()}. Checking next day...")
+            # Create a datetime for the beginning of the next day
+            next_day_start = datetime.datetime.combine(
+                parm_datetime.date() + datetime.timedelta(days=1),
+                datetime.time.min
+            )
+            return self.get_next_stop(stop_id, next_day_start, stop_code=stop_code, is_lookahead=True)
 
         min_d, max_d = self._get_stop_date_range(stop_id)
         _LOGGER.error(f"No service found for {parm_datetime.date()} (GTFS & Live). Global GTFS range: {self.min_date} to {self.max_date}. Stop {display_stop} range: {min_d} to {max_d}")

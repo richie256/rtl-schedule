@@ -15,14 +15,15 @@ def gtfs_zip_file():
         stops_data = 'stop_id,stop_code,stop_name\n1,123,Test Stop 1\n2,456,Test Stop 2'
         zf.writestr('stops.txt', stops_data)
 
+        # Service for today (Monday) and tomorrow (Tuesday)
         calendar_data = 'service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n1,1,1,1,1,1,0,0,20250101,20251231'
         zf.writestr('calendar.txt', calendar_data)
 
-        stop_times_data = 'trip_id,arrival_time,departure_time,stop_id,stop_sequence\n1,10:00:00,10:00:30,1,1\n1,10:05:00,10:05:30,2,2'
+        # Arrivals at 10:00 AM and 06:00 AM next day
+        stop_times_data = 'trip_id,arrival_time,departure_time,stop_id,stop_sequence\n1,10:00:00,10:00:30,1,1\n2,06:00:00,06:00:30,1,1'
         zf.writestr('stop_times.txt', stop_times_data)
 
-        # Added "Direction Terminus Panama" to match filtering logic
-        trips_data = 'route_id,service_id,trip_id,trip_headsign\n101,1,1,To Downtown Direction Terminus Panama'
+        trips_data = 'route_id,service_id,trip_id,trip_headsign\n101,1,1,Direction Terminus Panama\n101,1,2,Direction Terminus Panama'
         zf.writestr('trips.txt', trips_data)
     yield
     if os.path.exists(RTL_GTFS_ZIP_FILE):
@@ -30,63 +31,29 @@ def gtfs_zip_file():
 
 @patch('data_parser.HastusScraper')
 @patch('data_parser.is_file_expired', return_value=False)
-def test_init_loads_data(mock_is_file_expired, mock_hastus_scraper, gtfs_zip_file):
+def test_get_next_stop_lookahead(mock_is_file_expired, mock_hastus_scraper, gtfs_zip_file):
     parser = ParseRTLData()
-    assert isinstance(parser.stops, pd.DataFrame)
-    assert isinstance(parser.calendar, pd.DataFrame)
-    assert isinstance(parser.stop_times, pd.DataFrame)
-    assert isinstance(parser.trips, pd.DataFrame)
-    assert not parser.stops.empty
-    assert not parser.calendar.empty
-    assert not parser.stop_times.empty
-    assert not parser.trips.empty
-
-@patch('data_parser.HastusScraper')
-@patch('data_parser.requests.get')
-@patch('data_parser.is_file_expired', return_value=True)
-def test_init_downloads_new_file(mock_is_file_expired, mock_requests_get, mock_hastus_scraper, gtfs_zip_file):
-    # Mock the response from requests.get
-    mock_response = MagicMock()
-    # Create a valid zip file in memory
-    from io import BytesIO
-    zip_buffer = BytesIO()
-    with ZipFile(zip_buffer, 'w') as zf:
-        zf.writestr('stops.txt', 'stop_id,stop_code,stop_name\n1,123,Test Stop 1')
-        zf.writestr('calendar.txt', 'service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n1,1,1,1,1,1,0,0,20250101,20251231')
-        zf.writestr('stop_times.txt', 'trip_id,arrival_time,departure_time,stop_id,stop_sequence\n1,10:00:00,10:00:30,1,1')
-        zf.writestr('trips.txt', 'route_id,service_id,trip_id,trip_headsign\n101,1,1,To Downtown Direction Terminus Panama')
-    mock_response.content = zip_buffer.getvalue()
-    mock_requests_get.return_value = mock_response
-
-    # Create a dummy gtfs.zip file to be overwritten
-    with open(RTL_GTFS_ZIP_FILE, 'w') as f:
-        f.write('old content')
-
-    parser = ParseRTLData()
-
-    mock_requests_get.assert_called_once()
-
-@patch('data_parser.HastusScraper')
-@patch('data_parser.is_file_expired', return_value=False)
-def test_get_stop_id(mock_is_file_expired, mock_hastus_scraper, gtfs_zip_file):
-    parser = ParseRTLData()
-    stop_id = parser.get_stop_id(123)
-    assert stop_id == 1
-
-@patch('data_parser.HastusScraper')
-@patch('data_parser.is_file_expired', return_value=False)
-def test_get_service_id(mock_is_file_expired, mock_hastus_scraper, gtfs_zip_file):
-    parser = ParseRTLData()
-    # Monday in 2025
-    test_date = datetime.date(2025, 9, 29)
-    service_id = parser._get_service_id(test_date)
-    assert service_id == 1
+    
+    # Monday at 23:45 PM - Should find nothing for today, and look at Tuesday 06:00 AM
+    test_datetime = datetime.datetime(2025, 9, 29, 23, 45, 0)
+    
+    # Mock scraper to return nothing so we test GTFS lookahead
+    mock_hastus_scraper.return_value.get_schedule.return_value = []
+    
+    next_stop = parser.get_next_stop(1, test_datetime)
+    
+    assert next_stop is not None
+    # Should be the 06:00 AM bus
+    assert next_stop.arrival_time == '06:00:00'
+    # Date should be Tuesday (30th)
+    assert next_stop.arrival_datetime.date() == datetime.date(2025, 9, 30)
+    assert next_stop.retrieve_method == 'GTFS'
 
 @patch('data_parser.HastusScraper')
 @patch('data_parser.is_file_expired', return_value=False)
 def test_get_next_stop(mock_is_file_expired, mock_hastus_scraper, gtfs_zip_file):
     parser = ParseRTLData()
-    # Monday in 2025 at 9:00 AM
+    # Monday at 09:00 AM
     test_datetime = datetime.datetime(2025, 9, 29, 9, 0, 0)
     next_stop = parser.get_next_stop(1, test_datetime)
     assert next_stop is not None

@@ -1,17 +1,30 @@
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.poolmanager import PoolManager
 import datetime
 import logging
 from typing import Optional, List, Dict, Any
 from bs4 import BeautifulSoup
 import re
-import urllib3
 import json
 import os
 
-# Suppress only the single InsecureRequestWarning from urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
 _LOGGER = logging.getLogger("rtl-schedule")
+
+class HostnameIgnoreAdapter(HTTPAdapter):
+    """
+    Custom adapter to bypass hostname mismatch errors while still verifying 
+    the certificate chain. This is needed because Python's SSL module 
+    is strict about underscores in hostnames (e.g. madprep_i).
+    """
+    def init_poolmanager(self, connections, maxsize, block=False, **pool_kwargs):
+        self.poolmanager = PoolManager(
+            num_pools=connections,
+            maxsize=maxsize,
+            block=block,
+            assert_hostname=False,
+            **pool_kwargs
+        )
 
 class HastusScraper:
     BASE_URL = "https://madprep_i.rtl-longueuil.qc.ca/madOper.php"
@@ -22,6 +35,11 @@ class HastusScraper:
         self.stop_mappings = {} # stop_code (str) -> list of (feed_id:stop_id)
         # cache: (stop_id, pattern_id, week_start_date) -> { 'weekday': [...], 'samedi': [...], 'dimanche': [...] }
         self.schedule_cache = {} 
+        
+        # Initialize session with custom adapter for secure SSL verification
+        self.session = requests.Session()
+        self.session.mount(self.BASE_URL, HostnameIgnoreAdapter())
+        
         self._load_cache()
         self._initialize()
 
@@ -29,7 +47,7 @@ class HastusScraper:
         """Fetch current buildtime and basic metadata."""
         try:
             params = {"q": "routers", "s": "RTL", "api": "0"}
-            response = requests.get(self.BASE_URL, params=params, timeout=10, verify=False)
+            response = self.session.get(self.BASE_URL, params=params, timeout=10)
             data = response.json()
             self.buildtime = data.get("buildtime")
             _LOGGER.info(f"HastusScraper initialized with buildtime: {self.buildtime}")
@@ -86,7 +104,7 @@ class HastusScraper:
         """Fetch all stop mappings from the server."""
         try:
             params = {"q": "stops", "s": "RTL", "web": ""}
-            response = requests.get(self.BASE_URL, params=params, timeout=20, verify=False)
+            response = self.session.get(self.BASE_URL, params=params, timeout=20)
             content = response.text
             self.stop_mappings = {}
             for entry in content.split(';'):
@@ -122,6 +140,7 @@ class HastusScraper:
         
         internal_ids = self.stop_mappings.get(stop_code, [])
         if not internal_ids:
+            # Fallback to guessing feed 15 if not in mapping
             internal_ids = [f"15:{stop_code}"]
             
         patterns = []
@@ -133,7 +152,7 @@ class HastusScraper:
                 "web": ""
             }
             try:
-                response = requests.get(self.BASE_URL, params=params, timeout=15, verify=False)
+                response = self.session.get(self.BASE_URL, params=params, timeout=15)
                 patterns.extend(self._parse_patterns_html(response.text))
             except Exception as e:
                 _LOGGER.error(f"Failed to fetch patterns for {p_id}: {e}")
@@ -168,7 +187,7 @@ class HastusScraper:
         cache_key = (params['stop'], params['pattern'], week_start)
         
         if cache_key in self.schedule_cache:
-            _LOGGER.debug(f"Using cached schedule for {params['ligne']} on {date}")
+            _LOGGER.info(f"CACHE HIT: Using cached schedule for {params['ligne']} on {date}")
             return self._get_times_from_cache(self.schedule_cache[cache_key], date)
 
         t_timestamp = int(datetime.datetime.combine(week_start, datetime.time.min).timestamp())
@@ -194,7 +213,7 @@ class HastusScraper:
         
         try:
             _LOGGER.info(f"Scraping weekly schedule for {params['ligne']} at {params['desc']} starting {week_start}")
-            response = requests.get(self.BASE_URL, params=query_params, timeout=15, verify=False)
+            response = self.session.get(self.BASE_URL, params=query_params, timeout=15)
             
             weekly_data = self._parse_html_weekly_schedule(response.text)
             if not weekly_data['semaine'] and not weekly_data['samedi'] and not weekly_data['dimanche']:

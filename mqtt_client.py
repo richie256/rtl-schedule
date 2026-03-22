@@ -6,7 +6,7 @@ import logging
 import json
 import paho.mqtt.client as mqtt
 from paho.mqtt.client import CallbackAPIVersion
-from pythonjsonlogger import jsonlogger
+from pythonjsonlogger import json as jsonlogger
 
 from data_parser import ParseRTLData
 from const import _LOGGER
