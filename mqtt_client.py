@@ -40,13 +40,13 @@ def publish_hass_discovery_config(client, stop_code, discovery_prefix):
     """Publishes the Home Assistant discovery configuration for the bus stop sensor."""
     object_id = f"rtl_schedule_{stop_code}"
     discovery_topic = f"{discovery_prefix}/sensor/{object_id}/config"
+    state_topic = f"home/transit/bus/stop_{stop_code}"
 
     payload = {
         "name": f"Next Bus at Stop {stop_code}",
-        "state_topic": "home/schedule/bus_stop",
-        "value_template": f"{{% if value_json.stop_code == {stop_code} %}}{{{{ (value_json.nextstop_nbrmins + (value_json.nextstop_nbrsecs / 60)) | round(2) }}}}{{% else %}}{{{{ states('sensor.{object_id}') }}}}{{% endif %}}",
-        "json_attributes_topic": "home/schedule/bus_stop",
-        "json_attributes_template": f"{{% if value_json.stop_code == {stop_code} %}}{{{{ value_json | tojson }}}}{{% endif %}}",
+        "state_topic": state_topic,
+        "value_template": "{{ (value_json.nextstop_nbrmins + (value_json.nextstop_nbrsecs / 60)) | round(2) }}",
+        "json_attributes_topic": state_topic,
         "unique_id": object_id,
         "icon": "mdi:bus-clock",
         "unit_of_measurement": "min",
@@ -63,8 +63,9 @@ def publish_hass_discovery_config(client, stop_code, discovery_prefix):
 def get_mqtt_config() -> dict:
     """Reads and returns the MQTT configuration from environment variables."""
     try:
+        stop_code = int(os.environ["STOP_CODE"])
         config = {
-            "stop_code": int(os.environ["STOP_CODE"]),
+            "stop_code": stop_code,
             "mqtt_host": os.environ["MQTT_HOST"],
             "mqtt_port": int(os.environ.get("MQTT_PORT", 1883)),
             "mqtt_username": os.environ.get("MQTT_USERNAME"),
@@ -77,6 +78,7 @@ def get_mqtt_config() -> dict:
             "evening_rush_start": os.environ.get("EVENING_RUSH_START", "15:00"),
             "evening_rush_end": os.environ.get("EVENING_RUSH_END", "18:00"),
             "mqtt_refresh_topic": os.environ.get("MQTT_REFRESH_TOPIC", "rtl/schedule/refresh"),
+            "mqtt_state_topic": os.environ.get("MQTT_STATE_TOPIC", f"home/transit/bus/stop_{stop_code}"),
         }
         return config
     except (KeyError, ValueError) as e:
@@ -102,7 +104,7 @@ def publish_schedule(client, rtl_data, stop_id, config):
             'stop_code': config['stop_code'],
             'retrieve_method': str(next_stop_row.retrieve_method)
         }
-        topic = 'home/schedule/bus_stop'
+        topic = config["mqtt_state_topic"]
         client.publish(topic, json.dumps(payload))
         _LOGGER.info(f"Published to MQTT topic '{topic}'", extra={"topic": topic, "payload": payload})
     else:

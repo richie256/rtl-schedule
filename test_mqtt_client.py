@@ -50,3 +50,5 @@ def test_publish_hass_discovery_config():
     payload_dict = json.loads(args[1])
     assert payload_dict['name'] == f"Next Bus at Stop {stop_code}"
     assert payload_dict['unique_id'] == f"rtl_schedule_{stop_code}"
+    assert payload_dict['state_topic'] == f"home/transit/bus/stop_{stop_code}"
+    assert payload_dict['json_attributes_topic'] == f"home/transit/bus/stop_{stop_code}"

@@ -71,6 +71,7 @@ MQTT_USE_TLS=false
 HASS_DISCOVERY_ENABLED=false
 HASS_DISCOVERY_PREFIX=homeassistant
 MQTT_REFRESH_TOPIC=rtl/schedule/refresh
+MQTT_STATE_TOPIC=home/transit/bus/stop_32752
 ```
 
 Then run the container with the following command:
@@ -79,7 +80,7 @@ Then run the container with the following command:
 docker run --env-file .env -v ./data:/data -e MODE=mqtt rtl-schedule
 ```
 
--   **Topic:** `home/schedule/bus_stop`
+-   **Topic:** `home/transit/bus/stop_<STOP_CODE>` (can be overridden by `MQTT_STATE_TOPIC`)
 -   **Interval:**
     -   Every 10 seconds during rush hours (weekdays 6:00-9:00 and 15:00-18:00).
     -   Every 60 seconds at all other times.
