@@ -33,7 +33,7 @@ def create_app(rtl_data=None):
         if stop_id is None:
             return jsonify({"error": "Stop code not found"}), 404
         current_datetime = datetime.datetime.now().replace(microsecond=0)
-        next_stop_row = rtl_data.get_next_stop(stop_id, current_datetime)
+        next_stop_row = rtl_data.get_next_stop(stop_id, current_datetime, stop_code=stop_code)
 
         if next_stop_row is not None:
             difference = next_stop_row.arrival_datetime - current_datetime
