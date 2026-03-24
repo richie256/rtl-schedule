@@ -6,12 +6,12 @@ import logging
 import json
 import paho.mqtt.client as mqtt
 from paho.mqtt.client import CallbackAPIVersion
-from pythonjsonlogger import jsonlogger
+from pythonjsonlogger import json as jsonlogger
 
 from data_parser import ParseRTLData
+from const import _LOGGER
 
 # Configure logging
-_LOGGER = logging.getLogger("rtl-mqtt-publisher")
 logHandler = logging.StreamHandler()
 formatter = jsonlogger.JsonFormatter()
 logHandler.setFormatter(formatter)
@@ -40,13 +40,13 @@ def publish_hass_discovery_config(client, stop_code, discovery_prefix):
     """Publishes the Home Assistant discovery configuration for the bus stop sensor."""
     object_id = f"rtl_schedule_{stop_code}"
     discovery_topic = f"{discovery_prefix}/sensor/{object_id}/config"
+    state_topic = f"home/transit/bus/stop_{stop_code}"
 
     payload = {
         "name": f"Next Bus at Stop {stop_code}",
-        "state_topic": "home/schedule/bus_stop",
-        "value_template": f"{{% if value_json.stop_code == {stop_code} %}}{{{{ (value_json.nextstop_nbrmins + (value_json.nextstop_nbrsecs / 60)) | round(2) }}}}{{% else %}}{{{{ states('sensor.{object_id}') }}}}{{% endif %}}",
-        "json_attributes_topic": "home/schedule/bus_stop",
-        "json_attributes_template": f"{{% if value_json.stop_code == {stop_code} %}}{{{{ value_json | tojson }}}}{{% endif %}}",
+        "state_topic": state_topic,
+        "value_template": "{{ (value_json.nextstop_nbrmins + (value_json.nextstop_nbrsecs / 60)) | round(2) }}",
+        "json_attributes_topic": state_topic,
         "unique_id": object_id,
         "icon": "mdi:bus-clock",
         "unit_of_measurement": "min",
@@ -63,8 +63,9 @@ def publish_hass_discovery_config(client, stop_code, discovery_prefix):
 def get_mqtt_config() -> dict:
     """Reads and returns the MQTT configuration from environment variables."""
     try:
+        stop_code = int(os.environ["STOP_CODE"])
         config = {
-            "stop_code": int(os.environ["STOP_CODE"]),
+            "stop_code": stop_code,
             "mqtt_host": os.environ["MQTT_HOST"],
             "mqtt_port": int(os.environ.get("MQTT_PORT", 1883)),
             "mqtt_username": os.environ.get("MQTT_USERNAME"),
@@ -76,11 +77,38 @@ def get_mqtt_config() -> dict:
             "morning_rush_end": os.environ.get("MORNING_RUSH_END", "09:00"),
             "evening_rush_start": os.environ.get("EVENING_RUSH_START", "15:00"),
             "evening_rush_end": os.environ.get("EVENING_RUSH_END", "18:00"),
+            "mqtt_refresh_topic": os.environ.get("MQTT_REFRESH_TOPIC", "rtl/schedule/refresh"),
+            "mqtt_state_topic": os.environ.get("MQTT_STATE_TOPIC", f"home/transit/bus/stop_{stop_code}"),
         }
         return config
     except (KeyError, ValueError) as e:
         _LOGGER.error("Environment variable error", extra={"exception": str(e)})
         raise
+
+def publish_schedule(client, rtl_data, stop_id, config):
+    """Fetches and publishes the next bus stop information."""
+    current_datetime = datetime.datetime.now().replace(microsecond=0)
+    next_stop_row = rtl_data.get_next_stop(stop_id, current_datetime, stop_code=config['stop_code'])
+
+    if next_stop_row is not None:
+        difference = next_stop_row.arrival_datetime - current_datetime
+        nbr_minutes, nbr_seconds = divmod(difference.total_seconds(), 60)
+
+        payload = {
+            'nextstop_nbrmins': int(nbr_minutes),
+            'nextstop_nbrsecs': int(nbr_seconds),
+            'route_id': str(next_stop_row.route_id),
+            'arrival_time': str(next_stop_row.arrival_time),
+            'trip_headsign': str(next_stop_row.trip_headsign),
+            'current_time': str(current_datetime.time()),
+            'stop_code': config['stop_code'],
+            'retrieve_method': str(next_stop_row.retrieve_method)
+        }
+        topic = config["mqtt_state_topic"]
+        client.publish(topic, json.dumps(payload))
+        _LOGGER.info(f"Published to MQTT topic '{topic}'", extra={"topic": topic, "payload": payload})
+    else:
+        _LOGGER.info("No more buses for today.")
 
 def start_mqtt_client():
     """Main function to retrieve and publish bus schedule data."""
@@ -93,7 +121,21 @@ def start_mqtt_client():
 
     _LOGGER.info("Starting MQTT publisher", extra={"config": config})
 
+    is_refresh_active = False
+    refresh_end_time = None
+
     client = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2, protocol=mqtt.MQTTv5)
+
+    def on_message(client, userdata, msg):
+        nonlocal is_refresh_active, refresh_end_time
+        _LOGGER.info(f"Received message on topic {msg.topic}")
+        if msg.topic == config["mqtt_refresh_topic"]:
+            _LOGGER.info("Refresh action received")
+            is_refresh_active = True
+            refresh_end_time = datetime.datetime.now() + datetime.timedelta(minutes=10)
+            publish_schedule(client, rtl_data, stop_id, config)
+
+    client.on_message = on_message
 
     if config["mqtt_username"] and config["mqtt_password"]:
         client.username_pw_set(config["mqtt_username"], config["mqtt_password"])
@@ -102,6 +144,7 @@ def start_mqtt_client():
         client.tls_set()
 
     client.connect(config["mqtt_host"], config["mqtt_port"])
+    client.subscribe(config["mqtt_refresh_topic"])
     client.loop_start()
 
     if config["hass_discovery_enabled"]:
@@ -114,29 +157,16 @@ def start_mqtt_client():
 
     try:
         while True:
-            current_datetime = datetime.datetime.now().replace(microsecond=0)
-            next_stop_row = rtl_data.get_next_stop(stop_id, current_datetime)
-
-            if next_stop_row is not None:
-                difference = next_stop_row.arrival_datetime - current_datetime
-                nbr_minutes, nbr_seconds = divmod(difference.total_seconds(), 60)
-
-                payload = {
-                    'nextstop_nbrmins': int(nbr_minutes),
-                    'nextstop_nbrsecs': int(nbr_seconds),
-                    'route_id': int(next_stop_row.route_id),
-                    'arrival_time': str(next_stop_row.arrival_time),
-                    'trip_headsign': str(next_stop_row.trip_headsign),
-                    'current_time': str(current_datetime.time()),
-                    'stop_code': config['stop_code']
-                }
-                topic = 'home/schedule/bus_stop'
-                client.publish(topic, json.dumps(payload))
-                _LOGGER.info(f"Published to MQTT topic '{topic}'", extra={"topic": topic, "payload": payload})
+            if is_refresh_active:
+                if datetime.datetime.now() >= refresh_end_time:
+                    is_refresh_active = False
+                    _LOGGER.info("Refresh period ended")
+                interval = 5
             else:
-                _LOGGER.info("No more buses for today.")
-
-            interval = 10 if is_rush_hour(config) else 60
+                interval = 10 if is_rush_hour(config) else 60
+            
+            publish_schedule(client, rtl_data, stop_id, config)
+            
             _LOGGER.info(f"Waiting for {interval} seconds...", extra={"interval": interval})
             time.sleep(interval)
     finally:

@@ -70,6 +70,8 @@ MQTT_PASSWORD=your_mqtt_password
 MQTT_USE_TLS=false
 HASS_DISCOVERY_ENABLED=false
 HASS_DISCOVERY_PREFIX=homeassistant
+MQTT_REFRESH_TOPIC=rtl/schedule/refresh
+MQTT_STATE_TOPIC=home/transit/bus/stop_32752
 ```
 
 Then run the container with the following command:
@@ -78,11 +80,28 @@ Then run the container with the following command:
 docker run --env-file .env -v ./data:/data -e MODE=mqtt rtl-schedule
 ```
 
--   **Topic:** `home/schedule/bus_stop`
+-   **Topic:** `home/transit/bus/stop_<STOP_CODE>` (can be overridden by `MQTT_STATE_TOPIC`)
 -   **Interval:**
     -   Every 10 seconds during rush hours (weekdays 6:00-9:00 and 15:00-18:00).
     -   Every 60 seconds at all other times.
 -   **Payload:** The message payload is a JSON object containing schedule information.
+
+#### MQTT Refresh Action
+
+This application supports a refresh action via MQTT. When a message is published to the `MQTT_REFRESH_TOPIC` (by default, `rtl/schedule/refresh`), the application will immediately publish the latest bus schedule. After that, it will switch to a high-frequency update mode, publishing every 5 seconds for the next 10 minutes. The payload of the refresh message is ignored.
+
+This is useful if you want to get an immediate update on the bus schedule without waiting for the next scheduled publication.
+
+## Hastus Scraper (Fallback Mode)
+
+When the primary GTFS data is unavailable or outdated, the application automatically switches to the **Hastus Scraper**. This scraper retrieves real-time official schedules directly from the RTL web portal.
+
+### Features
+
+- **Dynamic Stop Mapping:** Automatically converts public stop codes (e.g., `32752`) into internal system IDs used by the RTL backend.
+- **Weekly Caching:** To minimize network requests and respect the RTL's infrastructure, the scraper fetches a full week of data (Monday to Sunday) in a single request.
+- **Disk Persistence:** The fetched weekly schedules are saved to `data/hastus_cache.json`. This ensures that even after a container restart, the application can immediately provide schedules without re-scraping the web portal.
+- **Categorized Schedules:** Intelligent parsing that separates schedules into three categories: Weekdays (`semaine`), Saturdays (`samedi`), and Sundays (`dimanche`).
 
 ## Unit Tests
 
