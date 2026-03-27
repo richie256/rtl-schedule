@@ -1,4 +1,3 @@
-
 import os
 import time
 import datetime
@@ -7,9 +6,10 @@ import json
 import paho.mqtt.client as mqtt
 from paho.mqtt.client import CallbackAPIVersion
 from pythonjsonlogger import json as jsonlogger
+from zoneinfo import ZoneInfo
 
 from data_parser import ParseRTLData
-from const import _LOGGER
+from const import _LOGGER, DEFAULT_TIMEZONE, LANGUAGE, TRANSLATIONS
 
 # Configure logging
 logHandler = logging.StreamHandler()
@@ -17,6 +17,11 @@ formatter = jsonlogger.JsonFormatter()
 logHandler.setFormatter(formatter)
 _LOGGER.addHandler(logHandler)
 _LOGGER.setLevel(logging.INFO)
+
+def get_translation():
+    """Returns the translation dictionary for the configured language."""
+    lang = LANGUAGE if LANGUAGE in TRANSLATIONS else "fr"
+    return TRANSLATIONS[lang]
 
 def is_rush_hour(config: dict) -> bool:
     """Checks if the current time is during a weekday rush hour."""
@@ -41,18 +46,20 @@ def publish_hass_discovery_config(client, stop_code, discovery_prefix):
     object_id = f"rtl_schedule_{stop_code}"
     discovery_topic = f"{discovery_prefix}/sensor/{object_id}/config"
     state_topic = f"home/transit/bus/stop_{stop_code}"
+    
+    t = get_translation()
 
     payload = {
-        "name": f"Next Bus at Stop {stop_code}",
+        "name": t["next_bus_at_stop"].format(stop_code=stop_code),
         "state_topic": state_topic,
-        "value_template": "{{ (value_json.nextstop_nbrmins + (value_json.nextstop_nbrsecs / 60)) | round(2) }}",
+        "value_template": "{{ value_json.arrival_datetime_iso }}",
         "json_attributes_topic": state_topic,
         "unique_id": object_id,
         "icon": "mdi:bus-clock",
-        "unit_of_measurement": "min",
+        "device_class": "timestamp",
         "device": {
             "identifiers": ["rtl_schedule"],
-            "name": "RTL Schedule",
+            "name": t["rtl_schedule"],
             "manufacturer": "RTL"
         }
     }
@@ -89,26 +96,38 @@ def publish_schedule(client, rtl_data, stop_id, config):
     """Fetches and publishes the next bus stop information."""
     current_datetime = datetime.datetime.now().replace(microsecond=0)
     next_stop_row = rtl_data.get_next_stop(stop_id, current_datetime, stop_code=config['stop_code'])
+    
+    t = get_translation()
 
     if next_stop_row is not None:
         difference = next_stop_row.arrival_datetime - current_datetime
         nbr_minutes, nbr_seconds = divmod(difference.total_seconds(), 60)
+
+        # Localize retrieve_method
+        method = str(next_stop_row.retrieve_method)
+        if method == "GTFS":
+            localized_method = t["gtfs"]
+        elif method == "live scraper":
+            localized_method = t["live_scraper"]
+        else:
+            localized_method = method
 
         payload = {
             'nextstop_nbrmins': int(nbr_minutes),
             'nextstop_nbrsecs': int(nbr_seconds),
             'route_id': str(next_stop_row.route_id),
             'arrival_time': str(next_stop_row.arrival_time),
+            'arrival_datetime_iso': next_stop_row.arrival_datetime.replace(tzinfo=ZoneInfo(DEFAULT_TIMEZONE)).isoformat(),
             'trip_headsign': str(next_stop_row.trip_headsign),
             'current_time': str(current_datetime.time()),
             'stop_code': config['stop_code'],
-            'retrieve_method': str(next_stop_row.retrieve_method)
+            'retrieve_method': localized_method
         }
         topic = config["mqtt_state_topic"]
         client.publish(topic, json.dumps(payload))
         _LOGGER.info(f"Published to MQTT topic '{topic}'", extra={"topic": topic, "payload": payload})
     else:
-        _LOGGER.info("No more buses for today.")
+        _LOGGER.info(t["no_more_buses"])
 
 def start_mqtt_client():
     """Main function to retrieve and publish bus schedule data."""
@@ -120,6 +139,8 @@ def start_mqtt_client():
         return
 
     _LOGGER.info("Starting MQTT publisher", extra={"config": config})
+    
+    t = get_translation()
 
     is_refresh_active = False
     refresh_end_time = None
@@ -130,7 +151,7 @@ def start_mqtt_client():
         nonlocal is_refresh_active, refresh_end_time
         _LOGGER.info(f"Received message on topic {msg.topic}")
         if msg.topic == config["mqtt_refresh_topic"]:
-            _LOGGER.info("Refresh action received")
+            _LOGGER.info(t["refresh_action_received"])
             is_refresh_active = True
             refresh_end_time = datetime.datetime.now() + datetime.timedelta(minutes=10)
             publish_schedule(client, rtl_data, stop_id, config)
@@ -160,14 +181,14 @@ def start_mqtt_client():
             if is_refresh_active:
                 if datetime.datetime.now() >= refresh_end_time:
                     is_refresh_active = False
-                    _LOGGER.info("Refresh period ended")
+                    _LOGGER.info(t["refresh_period_ended"])
                 interval = 5
             else:
                 interval = 10 if is_rush_hour(config) else 60
             
             publish_schedule(client, rtl_data, stop_id, config)
             
-            _LOGGER.info(f"Waiting for {interval} seconds...", extra={"interval": interval})
+            _LOGGER.info(t["waiting_for"].format(interval=interval), extra={"interval": interval})
             time.sleep(interval)
     finally:
         client.loop_stop()
