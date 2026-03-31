@@ -29,6 +29,7 @@ def gtfs_zip_file():
     if os.path.exists(RTL_GTFS_ZIP_FILE):
         os.remove(RTL_GTFS_ZIP_FILE)
 
+@patch('data_parser.RETRIEVAL_METHOD', 'gtfs')
 @patch('data_parser.HastusScraper')
 @patch('data_parser.is_file_expired', return_value=False)
 def test_get_next_stop_lookahead(mock_is_file_expired, mock_hastus_scraper, gtfs_zip_file):
@@ -49,6 +50,7 @@ def test_get_next_stop_lookahead(mock_is_file_expired, mock_hastus_scraper, gtfs
     assert next_stop.arrival_datetime.date() == datetime.date(2025, 9, 30)
     assert next_stop.retrieve_method == 'GTFS'
 
+@patch('data_parser.RETRIEVAL_METHOD', 'gtfs')
 @patch('data_parser.HastusScraper')
 @patch('data_parser.is_file_expired', return_value=False)
 def test_get_next_stop(mock_is_file_expired, mock_hastus_scraper, gtfs_zip_file):
