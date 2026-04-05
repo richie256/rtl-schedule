@@ -7,7 +7,7 @@ import requests
 from pandas import read_csv, to_datetime, Series, errors
 import pandas
 
-from const import _LOGGER, RTL_GTFS_URL, RTL_GTFS_ZIP_FILE
+from const import _LOGGER, RTL_GTFS_URL, RTL_GTFS_ZIP_FILE, RETRIEVAL_METHOD, TARGET_DIRECTION
 from util import is_file_expired
 from hastus_scraper import HastusScraper
 
@@ -70,7 +70,8 @@ class ParseRTLData:
     @staticmethod
     def _download_gtfs_file(zipfile_location) -> None:
         """ Download the GTFS file from the website, write it on disk. """
-        my_file = requests.get(RTL_GTFS_URL, allow_redirects=True)
+        my_file = requests.get(RTL_GTFS_URL, allow_redirects=True, timeout=60)
+        my_file.raise_for_status()
         with open(zipfile_location, 'wb') as my_zip:
             my_zip.write(my_file.content)
 
@@ -194,34 +195,37 @@ class ParseRTLData:
                 stop_code = matches.index[0]
 
         display_stop = f"{stop_code} (ID: {stop_id})" if stop_code else f"ID: {stop_id}"
-        _LOGGER.info(f"Retrieving next stop for stop {display_stop} at {parm_datetime}")
+        _LOGGER.info(f"Retrieving next stop for stop {display_stop} at {parm_datetime} (Method: {RETRIEVAL_METHOD})")
 
-        try:
-            today_service_id = self._get_service_id(parm_datetime.date())
-            today_schedule = self._get_today_schedule(today_service_id, stop_id)
+        if RETRIEVAL_METHOD != "live":
+            try:
+                today_service_id = self._get_service_id(parm_datetime.date())
+                today_schedule = self._get_today_schedule(today_service_id, stop_id)
 
-            if today_schedule.empty:
-                raise NoServiceFoundError(f"Empty schedule for service_id {today_service_id}")
+                if today_schedule.empty:
+                    raise NoServiceFoundError(f"Empty schedule for service_id {today_service_id}")
 
-            today_schedule_with_arrivals = self._calculate_arrival_datetimes(today_schedule, parm_datetime.date())
+                today_schedule_with_arrivals = self._calculate_arrival_datetimes(today_schedule, parm_datetime.date())
 
-            # Filter for "Direction Terminus Panama" if requested
-            target_direction = "Direction Terminus Panama"
-            today_schedule_with_arrivals = today_schedule_with_arrivals[
-                today_schedule_with_arrivals['trip_headsign'].str.contains(target_direction, case=False, na=False)
-            ]
+                # Filter for target direction if requested
+                if TARGET_DIRECTION:
+                    today_schedule_with_arrivals = today_schedule_with_arrivals[
+                        today_schedule_with_arrivals['trip_headsign'].str.contains(TARGET_DIRECTION, case=False, na=False)
+                    ]
 
-            next_stop = today_schedule_with_arrivals[today_schedule_with_arrivals['arrival_datetime'] > parm_datetime]
+                next_stop = today_schedule_with_arrivals[today_schedule_with_arrivals['arrival_datetime'] > parm_datetime]
 
-            if not next_stop.empty:
-                result = next_stop.iloc[0].copy()
-                result['retrieve_method'] = 'GTFS'
-                return result
+                if not next_stop.empty:
+                    result = next_stop.iloc[0].copy()
+                    result['retrieve_method'] = 'GTFS'
+                    return result
 
-            _LOGGER.info(f"No more buses in GTFS for stop {display_stop} after {parm_datetime}")
+                _LOGGER.info(f"No more buses in GTFS for stop {display_stop} after {parm_datetime}")
 
-        except NoServiceFoundError as e:
-            _LOGGER.info(f"GTFS check failed for {parm_datetime.date()}: {e}. Trying live scraper fallback...")
+            except NoServiceFoundError as e:
+                _LOGGER.info(f"GTFS check failed for {parm_datetime.date()}: {e}. Trying live scraper fallback...")
+        else:
+            _LOGGER.info(f"Skipping GTFS check as RETRIEVAL_METHOD is 'live'")
 
         # Fallback to Hastus Scraper
         live_arrivals = self.scraper.get_schedule(stop_id, parm_datetime.date())

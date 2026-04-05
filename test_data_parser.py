@@ -6,7 +6,7 @@ import pandas as pd
 from zipfile import ZipFile
 
 from data_parser import ParseRTLData
-from const import RTL_GTFS_ZIP_FILE
+from const import RTL_GTFS_ZIP_FILE, TARGET_DIRECTION
 
 @pytest.fixture
 def gtfs_zip_file():
@@ -23,12 +23,14 @@ def gtfs_zip_file():
         stop_times_data = 'trip_id,arrival_time,departure_time,stop_id,stop_sequence\n1,10:00:00,10:00:30,1,1\n2,06:00:00,06:00:30,1,1'
         zf.writestr('stop_times.txt', stop_times_data)
 
-        trips_data = 'route_id,service_id,trip_id,trip_headsign\n101,1,1,Direction Terminus Panama\n101,1,2,Direction Terminus Panama'
+        headsign = TARGET_DIRECTION if TARGET_DIRECTION else "Direction Terminus Panama"
+        trips_data = f'route_id,service_id,trip_id,trip_headsign\n101,1,1,{headsign}\n101,1,2,{headsign}'
         zf.writestr('trips.txt', trips_data)
     yield
     if os.path.exists(RTL_GTFS_ZIP_FILE):
         os.remove(RTL_GTFS_ZIP_FILE)
 
+@patch('data_parser.RETRIEVAL_METHOD', 'gtfs')
 @patch('data_parser.HastusScraper')
 @patch('data_parser.is_file_expired', return_value=False)
 def test_get_next_stop_lookahead(mock_is_file_expired, mock_hastus_scraper, gtfs_zip_file):
@@ -49,6 +51,7 @@ def test_get_next_stop_lookahead(mock_is_file_expired, mock_hastus_scraper, gtfs
     assert next_stop.arrival_datetime.date() == datetime.date(2025, 9, 30)
     assert next_stop.retrieve_method == 'GTFS'
 
+@patch('data_parser.RETRIEVAL_METHOD', 'gtfs')
 @patch('data_parser.HastusScraper')
 @patch('data_parser.is_file_expired', return_value=False)
 def test_get_next_stop(mock_is_file_expired, mock_hastus_scraper, gtfs_zip_file):
@@ -60,3 +63,33 @@ def test_get_next_stop(mock_is_file_expired, mock_hastus_scraper, gtfs_zip_file)
     assert next_stop.route_id == 101
     assert next_stop.arrival_time == '10:00:00'
     assert next_stop.retrieve_method == 'GTFS'
+
+@patch('data_parser.RETRIEVAL_METHOD', 'live')
+@patch('data_parser.HastusScraper')
+@patch('data_parser.is_file_expired', return_value=False)
+@patch('os.path.isfile', return_value=True)
+@patch('data_parser.read_csv')
+@patch('zipfile.ZipFile')
+def test_get_next_stop_live_mode(mock_zipfile, mock_read_csv, mock_isfile, mock_is_file_expired, mock_hastus_scraper):
+    """Verifies that in 'live' mode, it uses HastusScraper and skips GTFS."""
+    # Mock dataframes to avoid initialization errors
+    mock_read_csv.return_value = MagicMock()
+    
+    mock_scraper_inst = mock_hastus_scraper.return_value
+    mock_scraper_inst.get_schedule.return_value = [
+        {
+            'arrival_datetime': datetime.datetime(2025, 9, 29, 10, 0, 0),
+            'arrival_time': '10:00:00',
+            'route_id': '44',
+            'trip_headsign': '44 Direction Terminus Panama'
+        }
+    ]
+    
+    parser = ParseRTLData()
+    test_datetime = datetime.datetime(2025, 9, 29, 9, 0, 0)
+    next_stop = parser.get_next_stop(2752, test_datetime)
+    
+    assert next_stop is not None
+    assert next_stop.retrieve_method == 'live scraper'
+    assert next_stop.route_id == '44'
+    mock_scraper_inst.get_schedule.assert_called_once()

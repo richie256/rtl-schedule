@@ -1,6 +1,7 @@
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.poolmanager import PoolManager
+from urllib3.util.retry import Retry
 import datetime
 import logging
 from typing import Optional, List, Dict, Any
@@ -8,6 +9,7 @@ from bs4 import BeautifulSoup
 import re
 import json
 import os
+from const import TARGET_DIRECTION
 
 _LOGGER = logging.getLogger("rtl-schedule")
 
@@ -17,6 +19,10 @@ class HostnameIgnoreAdapter(HTTPAdapter):
     the certificate chain. This is needed because Python's SSL module 
     is strict about underscores in hostnames (e.g. madprep_i).
     """
+    def __init__(self, *args, **kwargs):
+        self.max_retries = kwargs.pop('max_retries', None)
+        super().__init__(*args, **kwargs)
+
     def init_poolmanager(self, connections, maxsize, block=False, **pool_kwargs):
         self.poolmanager = PoolManager(
             num_pools=connections,
@@ -36,9 +42,17 @@ class HastusScraper:
         # cache: (stop_id, pattern_id, week_start_date) -> { 'weekday': [...], 'samedi': [...], 'dimanche': [...] }
         self.schedule_cache = {} 
         
-        # Initialize session with custom adapter for secure SSL verification
+        # Initialize session with custom adapter and retry logic
         self.session = requests.Session()
-        self.session.mount(self.BASE_URL, HostnameIgnoreAdapter())
+        
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+        )
+        adapter = HostnameIgnoreAdapter(max_retries=retry_strategy)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
         
         self._load_cache()
         self._initialize()
@@ -48,11 +62,16 @@ class HastusScraper:
         try:
             params = {"q": "routers", "s": "RTL", "api": "0"}
             response = self.session.get(self.BASE_URL, params=params, timeout=10)
+            response.raise_for_status()
             data = response.json()
             self.buildtime = data.get("buildtime")
             _LOGGER.info(f"HastusScraper initialized with buildtime: {self.buildtime}")
+        except requests.exceptions.RequestException as e:
+            _LOGGER.error(f"Network error during HastusScraper initialization: {e}")
+        except ValueError as e:
+            _LOGGER.error(f"JSON parsing error during HastusScraper initialization: {e}")
         except Exception as e:
-            _LOGGER.error(f"Failed to initialize HastusScraper: {e}")
+            _LOGGER.error(f"Unexpected error during HastusScraper initialization: {e}")
 
     def _load_cache(self):
         """Load cache from disk."""
@@ -105,6 +124,7 @@ class HastusScraper:
         try:
             params = {"q": "stops", "s": "RTL", "web": ""}
             response = self.session.get(self.BASE_URL, params=params, timeout=20)
+            response.raise_for_status()
             content = response.text
             self.stop_mappings = {}
             for entry in content.split(';'):
@@ -118,8 +138,10 @@ class HastusScraper:
                     if internal_id not in self.stop_mappings[stop_code]:
                         self.stop_mappings[stop_code].append(internal_id)
             _LOGGER.info(f"Fetched {len(self.stop_mappings)} stop mappings.")
+        except requests.exceptions.RequestException as e:
+            _LOGGER.error(f"Network error while fetching stop mappings: {e}")
         except Exception as e:
-            _LOGGER.error(f"Failed to fetch stop mappings: {e}")
+            _LOGGER.error(f"Unexpected error while fetching stop mappings: {e}")
 
     def get_stop_code_from_id(self, stop_id: int) -> Optional[str]:
         """Find the public stop code for a given internal stop_id."""
@@ -190,42 +212,104 @@ class HastusScraper:
             _LOGGER.info(f"CACHE HIT: Using cached schedule for {params['ligne']} on {date}")
             return self._get_times_from_cache(self.schedule_cache[cache_key], date)
 
-        t_timestamp = int(datetime.datetime.combine(week_start, datetime.time.min).timestamp())
-        
-        pattern_str = params['pattern']
-        parts = pattern_str.split(':')
-        feed_id = parts[0]
-        route_id = parts[1]
-        
-        query_params = {
-            "b": self.buildtime,
+        # Step 1: Fetch landing page to discover service periods (different 't' values)
+        landing_params = {
             "q": "stops_stoptimes",
             "p": params['stop'],
-            "f": feed_id,
-            "t": t_timestamp,
-            "j": 7,
             "s": "RTL",
             "web": "",
             "pp": params['pattern'],
-            "l": params['ligne'],
-            "r": f"{feed_id}:{route_id}"
+            "l": params['ligne']
         }
         
         try:
-            _LOGGER.info(f"Scraping weekly schedule for {params['ligne']} at {params['desc']} starting {week_start}")
-            response = self.session.get(self.BASE_URL, params=query_params, timeout=15)
+            _LOGGER.info(f"Fetching landing page to discover service periods for {params['ligne']}")
+            landing_res = self.session.get(self.BASE_URL, params=landing_params, timeout=15)
+            soup = BeautifulSoup(landing_res.text, 'html.parser')
+            links = soup.find_all('a', href=re.compile(r'q=stops_stoptimes'))
             
-            weekly_data = self._parse_html_weekly_schedule(response.text)
-            if not weekly_data['semaine'] and not weekly_data['samedi'] and not weekly_data['dimanche']:
-                _LOGGER.warning(f"No times found in scraped HTML for {params['ligne']}")
+            combined_weekly_data = {'semaine': [], 'samedi': [], 'dimanche': []}
+            
+            # Step 2: Fetch each "regulier" schedule found
+            found_any = False
+            for link in links:
+                href = link.get('href')
+                if "regulier" not in href and "t=" not in href:
+                    continue
                 
-            self.schedule_cache[cache_key] = weekly_data
+                # Extract full URL or build it
+                if href.startswith('/'):
+                    url = f"https://madprep_i.rtl-longueuil.qc.ca{href}"
+                elif href.startswith('madOper.php'):
+                    url = f"https://madprep_i.rtl-longueuil.qc.ca/{href}"
+                else:
+                    # Might be relative or already absolute
+                    url = href if "://" in href else f"https://madprep_i.rtl-longueuil.qc.ca/{href}"
+
+                _LOGGER.info(f"Fetching schedule period from: {url}")
+                response = self.session.get(url, timeout=15)
+                found_any = True
+                
+                try:
+                    json_data = response.json()
+                    if isinstance(json_data, dict) and 'data' in json_data:
+                        _LOGGER.info("Successfully fetched JSON schedule")
+                        period_data = self._parse_json_weekly_schedule(json_data, week_start)
+                        for cat in combined_weekly_data:
+                            combined_weekly_data[cat].extend(period_data[cat])
+                    else:
+                        _LOGGER.warning("Response was not the expected JSON format")
+                except ValueError:
+                    _LOGGER.warning("Failed to parse JSON from service period link")
+
+            if not found_any:
+                _LOGGER.warning("No service period links found on landing page")
+
+            # Deduplicate and sort
+            for cat in combined_weekly_data:
+                combined_weekly_data[cat] = sorted(list(set(combined_weekly_data[cat])))
+
+            self.schedule_cache[cache_key] = combined_weekly_data
             self._save_cache()
+
+            return self._get_times_from_cache(combined_weekly_data, date)
             
-            return self._get_times_from_cache(weekly_data, date)
         except Exception as e:
             _LOGGER.error(f"Scraping failed: {e}")
+            import traceback
+            _LOGGER.error(traceback.format_exc())
             return []
+
+    def _parse_json_weekly_schedule(self, json_data: Dict, week_start: datetime.date) -> Dict[str, List[datetime.time]]:
+        """Parse the new JSON format into weekly categories."""
+        weekly_data = {'semaine': [], 'samedi': [], 'dimanche': []}
+
+        # In the JSON, each entry has a 'date' or we can look at its day of week.
+        for entry in json_data.get('data', []):
+            arrival_seconds = entry.get('scheduledarrival')
+            if arrival_seconds is None: continue
+
+            # Convert seconds since midnight to time
+            h, m = divmod(arrival_seconds // 60, 60)
+            t = datetime.time(h % 24, m)
+
+            # Identify which day this belongs to
+            date_str = entry.get('date')
+            if date_str:
+                entry_date = datetime.datetime.fromisoformat(date_str.replace('Z', '+00:00')).date()
+                weekday = entry_date.weekday()
+                if weekday < 5:
+                    weekly_data['semaine'].append(t)
+                elif weekday == 5:
+                    weekly_data['samedi'].append(t)
+                else:
+                    weekly_data['dimanche'].append(t)
+
+        # Deduplicate and sort
+        for cat in weekly_data:
+            weekly_data[cat] = sorted(list(set(weekly_data[cat])))
+
+        return weekly_data
 
     def _get_times_from_cache(self, weekly_data: Dict[str, List[datetime.time]], date: datetime.date) -> List[datetime.datetime]:
         """Helper to convert cached time list to datetime list for a specific date."""
@@ -249,35 +333,46 @@ class HastusScraper:
         soup = BeautifulSoup(html, 'html.parser')
         weekly_data = {'semaine': [], 'samedi': [], 'dimanche': []}
         
-        tables = soup.find_all('table', style=lambda s: s and 'border: 2px solid #AA3300' in s)
+        # Search for tables that contain category markers in their bold headers
+        tables = soup.find_all('table')
         
         for table in tables:
             header_row = table.find('tr')
             if not header_row: continue
             
-            category_cell = header_row.find('b')
-            if not category_cell: continue
-            
-            category_text = category_cell.get_text(strip=True).lower()
+            # Categories are often in <b>Semaine</b>, <b>Samedi</b>, etc.
+            category_cells = table.find_all('b')
             category = None
-            if 'semaine' in category_text:
-                category = 'semaine'
-            elif 'samedi' in category_text:
-                category = 'samedi'
-            elif 'dimanche' in category_text:
-                category = 'dimanche'
+            for cell in category_cells:
+                text = cell.get_text(strip=True).lower()
+                if 'semaine' in text:
+                    category = 'semaine'
+                    break
+                elif 'samedi' in text:
+                    category = 'samedi'
+                    break
+                elif 'dimanche' in text:
+                    category = 'dimanche'
+                    break
             
             if category:
-                rows = table.find_all('tr')[2:]
+                # We found a schedule table for a category
+                rows = table.find_all('tr')
                 for row in rows:
                     cells = row.find_all('td')
-                    if cells:
-                        time_str = cells[0].get_text(strip=True)
-                        match = re.match(r'(\d{1,2}):(\d{2})', time_str)
+                    for cell in cells:
+                        time_str = cell.get_text(strip=True)
+                        # Match HH:MM format
+                        match = re.match(r'^(\d{1,2}):(\d{2})$', time_str)
                         if match:
                             h, m = map(int, match.groups())
+                            # Handle times past midnight (e.g. 25:15)
                             weekly_data[category].append(datetime.time(h % 24, m))
-                            
+        
+        # Deduplicate and sort
+        for cat in weekly_data:
+            weekly_data[cat] = sorted(list(set(weekly_data[cat])))
+
         return weekly_data
 
     def get_schedule(self, stop_id: int, date: datetime.date, feed_id: int = 15) -> List[Dict[str, Any]]:
@@ -295,12 +390,10 @@ class HastusScraper:
             return []
             
         all_arrivals = []
-        # Filter for "Direction Terminus Panama" as requested
-        target_direction = "Direction Terminus Panama"
-        
+        # Filter for target direction if requested
         for p in patterns:
-            if target_direction not in p['ligne']:
-                _LOGGER.debug(f"Skipping pattern {p['ligne']} (not {target_direction})")
+            if TARGET_DIRECTION and TARGET_DIRECTION not in p['ligne']:
+                _LOGGER.debug(f"Skipping pattern {p['ligne']} (not {TARGET_DIRECTION})")
                 continue
                 
             arrivals = self.get_schedule_by_params(p, date)
