@@ -1,7 +1,11 @@
 
 # richie256/rtl-schedule
 
-[![Docker Image CI](https://github.com/richie256/rtl-schedule/actions/workflows/dockerimage.yml/badge.svg)](https://github.com/richie256/rtl-schedule/actions/workflows/dockerimage.yml)
+[![Docker CI](https://github.com/richie256/rtl-schedule/actions/workflows/dockerimage.yml/badge.svg)](https://github.com/richie256/rtl-schedule/actions/workflows/dockerimage.yml)
+[![Unit Tests](https://github.com/richie256/rtl-schedule/actions/workflows/tests.yml/badge.svg)](https://github.com/richie256/rtl-schedule/actions/workflows/tests.yml)
+[![Latest Release](https://img.shields.io/github/v/release/richie256/rtl-schedule)](https://github.com/richie256/rtl-schedule/releases)
+[![Last Commit](https://img.shields.io/github/last-commit/richie256/rtl-schedule)](https://github.com/richie256/rtl-schedule/commits/main)
+[![Python Version](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/release/python-3120/)
 
 This project provides an application to get bus schedule information from the Réseau de transport de Longueuil (RTL). The application can run in two different modes:
 
