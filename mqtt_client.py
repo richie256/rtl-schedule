@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from data_parser import ParseRTLData
 from const import _LOGGER, DEFAULT_TIMEZONE, LANGUAGE, TRANSLATIONS
+from config import config
 
 # Configure logging
 logHandler = logging.StreamHandler()
@@ -20,10 +21,10 @@ _LOGGER.setLevel(logging.INFO)
 
 def get_translation():
     """Returns the translation dictionary for the configured language."""
-    lang = LANGUAGE if LANGUAGE in TRANSLATIONS else "fr"
+    lang = config.language if config.language in TRANSLATIONS else "fr"
     return TRANSLATIONS[lang]
 
-def is_rush_hour(config: dict) -> bool:
+def is_rush_hour() -> bool:
     """Checks if the current time is during a weekday rush hour."""
     now = datetime.datetime.now()
     is_weekday = 0 <= now.weekday() <= 4  # Monday to Friday
@@ -31,10 +32,10 @@ def is_rush_hour(config: dict) -> bool:
         return False
 
     time_now = now.time()
-    morning_rush_start = datetime.datetime.strptime(config["morning_rush_start"], "%H:%M").time()
-    morning_rush_end = datetime.datetime.strptime(config["morning_rush_end"], "%H:%M").time()
-    evening_rush_start = datetime.datetime.strptime(config["evening_rush_start"], "%H:%M").time()
-    evening_rush_end = datetime.datetime.strptime(config["evening_rush_end"], "%H:%M").time()
+    morning_rush_start = datetime.datetime.strptime(config.morning_rush_start, "%H:%M").time()
+    morning_rush_end = datetime.datetime.strptime(config.morning_rush_end, "%H:%M").time()
+    evening_rush_start = datetime.datetime.strptime(config.evening_rush_start, "%H:%M").time()
+    evening_rush_end = datetime.datetime.strptime(config.evening_rush_end, "%H:%M").time()
 
     is_morning_rush = morning_rush_start <= time_now <= morning_rush_end
     is_evening_rush = evening_rush_start <= time_now <= evening_rush_end
@@ -45,7 +46,7 @@ def publish_hass_discovery_config(client, stop_code, discovery_prefix):
     """Publishes the Home Assistant discovery configuration for the bus stop sensor."""
     object_id = f"rtl_schedule_{stop_code}"
     discovery_topic = f"{discovery_prefix}/sensor/{object_id}/config"
-    state_topic = f"home/transit/bus/stop_{stop_code}"
+    state_topic = config.mqtt_state_topic
     
     t = get_translation()
 
@@ -67,35 +68,10 @@ def publish_hass_discovery_config(client, stop_code, discovery_prefix):
     client.publish(discovery_topic, json.dumps(payload), retain=True)
     _LOGGER.info("Published Home Assistant discovery configuration", extra={"topic": discovery_topic, "payload": payload})
 
-def get_mqtt_config() -> dict:
-    """Reads and returns the MQTT configuration from environment variables."""
-    try:
-        stop_code = int(os.environ["STOP_CODE"])
-        config = {
-            "stop_code": stop_code,
-            "mqtt_host": os.environ["MQTT_HOST"],
-            "mqtt_port": int(os.environ.get("MQTT_PORT", 1883)),
-            "mqtt_username": os.environ.get("MQTT_USERNAME"),
-            "mqtt_password": os.environ.get("MQTT_PASSWORD"),
-            "mqtt_use_tls": os.environ.get("MQTT_USE_TLS", "False").lower() == "true",
-            "hass_discovery_enabled": os.environ.get("HASS_DISCOVERY_ENABLED", "False").lower() == "true",
-            "hass_discovery_prefix": os.environ.get("HASS_DISCOVERY_PREFIX", "homeassistant"),
-            "morning_rush_start": os.environ.get("MORNING_RUSH_START", "06:00"),
-            "morning_rush_end": os.environ.get("MORNING_RUSH_END", "09:00"),
-            "evening_rush_start": os.environ.get("EVENING_RUSH_START", "15:00"),
-            "evening_rush_end": os.environ.get("EVENING_RUSH_END", "18:00"),
-            "mqtt_refresh_topic": os.environ.get("MQTT_REFRESH_TOPIC", "rtl/schedule/refresh"),
-            "mqtt_state_topic": os.environ.get("MQTT_STATE_TOPIC", f"home/transit/bus/stop_{stop_code}"),
-        }
-        return config
-    except (KeyError, ValueError) as e:
-        _LOGGER.error("Environment variable error", extra={"exception": str(e)})
-        raise
-
-def publish_schedule(client, rtl_data, stop_id, config):
+def publish_schedule(client, rtl_data, stop_id):
     """Fetches and publishes the next bus stop information."""
     current_datetime = datetime.datetime.now().replace(microsecond=0)
-    next_stop_row = rtl_data.get_next_stop(stop_id, current_datetime, stop_code=config['stop_code'])
+    next_stop_row = rtl_data.get_next_stop(stop_id, current_datetime, stop_code=config.stop_code)
     
     t = get_translation()
 
@@ -120,10 +96,10 @@ def publish_schedule(client, rtl_data, stop_id, config):
             'arrival_datetime_iso': next_stop_row.arrival_datetime.replace(tzinfo=ZoneInfo(DEFAULT_TIMEZONE)).isoformat(),
             'trip_headsign': str(next_stop_row.trip_headsign),
             'current_time': str(current_datetime.time()),
-            'stop_code': config['stop_code'],
+            'stop_code': config.stop_code,
             'retrieve_method': localized_method
         }
-        topic = config["mqtt_state_topic"]
+        topic = config.mqtt_state_topic
         client.publish(topic, json.dumps(payload))
         _LOGGER.info(f"Published to MQTT topic '{topic}'", extra={"topic": topic, "payload": payload})
     else:
@@ -131,14 +107,17 @@ def publish_schedule(client, rtl_data, stop_id, config):
 
 def start_mqtt_client():
     """Main function to retrieve and publish bus schedule data."""
+    if config.stop_code is None:
+        _LOGGER.error("STOP_CODE environment variable is required but missing or invalid.")
+        return
+
     try:
-        config = get_mqtt_config()
         rtl_data = ParseRTLData()
     except Exception as e:
         _LOGGER.error(f"Failed to initialize: {e}")
         return
 
-    _LOGGER.info("Starting MQTT publisher", extra={"config": config})
+    _LOGGER.info("Starting MQTT publisher", extra={"config": config.to_dict()})
     
     t = get_translation()
 
@@ -150,30 +129,30 @@ def start_mqtt_client():
     def on_message(client, userdata, msg):
         nonlocal is_refresh_active, refresh_end_time
         _LOGGER.info(f"Received message on topic {msg.topic}")
-        if msg.topic == config["mqtt_refresh_topic"]:
+        if msg.topic == config.mqtt_refresh_topic:
             _LOGGER.info(t["refresh_action_received"])
             is_refresh_active = True
             refresh_end_time = datetime.datetime.now() + datetime.timedelta(minutes=10)
-            publish_schedule(client, rtl_data, stop_id, config)
+            publish_schedule(client, rtl_data, stop_id)
 
     client.on_message = on_message
 
-    if config["mqtt_username"] and config["mqtt_password"]:
-        client.username_pw_set(config["mqtt_username"], config["mqtt_password"])
+    if config.mqtt_username and config.mqtt_password:
+        client.username_pw_set(config.mqtt_username, config.mqtt_password)
 
-    if config["mqtt_use_tls"]:
+    if config.mqtt_use_tls:
         client.tls_set()
 
-    client.connect(config["mqtt_host"], config["mqtt_port"])
-    client.subscribe(config["mqtt_refresh_topic"])
+    client.connect(config.mqtt_host, config.mqtt_port)
+    client.subscribe(config.mqtt_refresh_topic)
     client.loop_start()
 
-    if config["hass_discovery_enabled"]:
-        publish_hass_discovery_config(client, config["stop_code"], config["hass_discovery_prefix"])
+    if config.hass_discovery_enabled:
+        publish_hass_discovery_config(client, config.stop_code, config.hass_discovery_prefix)
 
-    stop_id = rtl_data.get_stop_id(config['stop_code'])
+    stop_id = rtl_data.get_stop_id(config.stop_code)
     if stop_id is None:
-        _LOGGER.error(f"Stop code {config['stop_code']} not found.")
+        _LOGGER.error(f"Stop code {config.stop_code} not found.")
         return
 
     try:
@@ -184,9 +163,9 @@ def start_mqtt_client():
                     _LOGGER.info(t["refresh_period_ended"])
                 interval = 5
             else:
-                interval = 10 if is_rush_hour(config) else 60
+                interval = 10 if is_rush_hour() else 60
             
-            publish_schedule(client, rtl_data, stop_id, config)
+            publish_schedule(client, rtl_data, stop_id)
             
             _LOGGER.info(t["waiting_for"].format(interval=interval), extra={"interval": interval})
             time.sleep(interval)

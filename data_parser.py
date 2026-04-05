@@ -7,7 +7,7 @@ import requests
 from pandas import read_csv, to_datetime, Series, errors
 import pandas
 
-from const import _LOGGER, RTL_GTFS_URL, RTL_GTFS_ZIP_FILE, RETRIEVAL_METHOD
+from const import _LOGGER, RTL_GTFS_URL, RTL_GTFS_ZIP_FILE, RETRIEVAL_METHOD, TARGET_DIRECTION
 from util import is_file_expired
 from hastus_scraper import HastusScraper
 
@@ -70,7 +70,8 @@ class ParseRTLData:
     @staticmethod
     def _download_gtfs_file(zipfile_location) -> None:
         """ Download the GTFS file from the website, write it on disk. """
-        my_file = requests.get(RTL_GTFS_URL, allow_redirects=True)
+        my_file = requests.get(RTL_GTFS_URL, allow_redirects=True, timeout=60)
+        my_file.raise_for_status()
         with open(zipfile_location, 'wb') as my_zip:
             my_zip.write(my_file.content)
 
@@ -206,11 +207,11 @@ class ParseRTLData:
 
                 today_schedule_with_arrivals = self._calculate_arrival_datetimes(today_schedule, parm_datetime.date())
 
-                # Filter for "Direction Terminus Panama" if requested
-                target_direction = "Direction Terminus Panama"
-                today_schedule_with_arrivals = today_schedule_with_arrivals[
-                    today_schedule_with_arrivals['trip_headsign'].str.contains(target_direction, case=False, na=False)
-                ]
+                # Filter for target direction if requested
+                if TARGET_DIRECTION:
+                    today_schedule_with_arrivals = today_schedule_with_arrivals[
+                        today_schedule_with_arrivals['trip_headsign'].str.contains(TARGET_DIRECTION, case=False, na=False)
+                    ]
 
                 next_stop = today_schedule_with_arrivals[today_schedule_with_arrivals['arrival_datetime'] > parm_datetime]
 

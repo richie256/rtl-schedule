@@ -1,6 +1,7 @@
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.poolmanager import PoolManager
+from urllib3.util.retry import Retry
 import datetime
 import logging
 from typing import Optional, List, Dict, Any
@@ -8,6 +9,7 @@ from bs4 import BeautifulSoup
 import re
 import json
 import os
+from const import TARGET_DIRECTION
 
 _LOGGER = logging.getLogger("rtl-schedule")
 
@@ -17,6 +19,10 @@ class HostnameIgnoreAdapter(HTTPAdapter):
     the certificate chain. This is needed because Python's SSL module 
     is strict about underscores in hostnames (e.g. madprep_i).
     """
+    def __init__(self, *args, **kwargs):
+        self.max_retries = kwargs.pop('max_retries', None)
+        super().__init__(*args, **kwargs)
+
     def init_poolmanager(self, connections, maxsize, block=False, **pool_kwargs):
         self.poolmanager = PoolManager(
             num_pools=connections,
@@ -36,9 +42,17 @@ class HastusScraper:
         # cache: (stop_id, pattern_id, week_start_date) -> { 'weekday': [...], 'samedi': [...], 'dimanche': [...] }
         self.schedule_cache = {} 
         
-        # Initialize session with custom adapter for secure SSL verification
+        # Initialize session with custom adapter and retry logic
         self.session = requests.Session()
-        self.session.mount(self.BASE_URL, HostnameIgnoreAdapter())
+        
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+        )
+        adapter = HostnameIgnoreAdapter(max_retries=retry_strategy)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
         
         self._load_cache()
         self._initialize()
@@ -48,11 +62,16 @@ class HastusScraper:
         try:
             params = {"q": "routers", "s": "RTL", "api": "0"}
             response = self.session.get(self.BASE_URL, params=params, timeout=10)
+            response.raise_for_status()
             data = response.json()
             self.buildtime = data.get("buildtime")
             _LOGGER.info(f"HastusScraper initialized with buildtime: {self.buildtime}")
+        except requests.exceptions.RequestException as e:
+            _LOGGER.error(f"Network error during HastusScraper initialization: {e}")
+        except ValueError as e:
+            _LOGGER.error(f"JSON parsing error during HastusScraper initialization: {e}")
         except Exception as e:
-            _LOGGER.error(f"Failed to initialize HastusScraper: {e}")
+            _LOGGER.error(f"Unexpected error during HastusScraper initialization: {e}")
 
     def _load_cache(self):
         """Load cache from disk."""
@@ -105,6 +124,7 @@ class HastusScraper:
         try:
             params = {"q": "stops", "s": "RTL", "web": ""}
             response = self.session.get(self.BASE_URL, params=params, timeout=20)
+            response.raise_for_status()
             content = response.text
             self.stop_mappings = {}
             for entry in content.split(';'):
@@ -118,8 +138,10 @@ class HastusScraper:
                     if internal_id not in self.stop_mappings[stop_code]:
                         self.stop_mappings[stop_code].append(internal_id)
             _LOGGER.info(f"Fetched {len(self.stop_mappings)} stop mappings.")
+        except requests.exceptions.RequestException as e:
+            _LOGGER.error(f"Network error while fetching stop mappings: {e}")
         except Exception as e:
-            _LOGGER.error(f"Failed to fetch stop mappings: {e}")
+            _LOGGER.error(f"Unexpected error while fetching stop mappings: {e}")
 
     def get_stop_code_from_id(self, stop_id: int) -> Optional[str]:
         """Find the public stop code for a given internal stop_id."""
@@ -368,12 +390,10 @@ class HastusScraper:
             return []
             
         all_arrivals = []
-        # Filter for "Direction Terminus Panama" as requested
-        target_direction = "Direction Terminus Panama"
-        
+        # Filter for target direction if requested
         for p in patterns:
-            if target_direction not in p['ligne']:
-                _LOGGER.debug(f"Skipping pattern {p['ligne']} (not {target_direction})")
+            if TARGET_DIRECTION and TARGET_DIRECTION not in p['ligne']:
+                _LOGGER.debug(f"Skipping pattern {p['ligne']} (not {TARGET_DIRECTION})")
                 continue
                 
             arrivals = self.get_schedule_by_params(p, date)

@@ -68,11 +68,43 @@ MQTT_PORT=1883
 MQTT_USERNAME=your_mqtt_username
 MQTT_PASSWORD=your_mqtt_password
 MQTT_USE_TLS=false
+TARGET_DIRECTION=Direction Terminus Panama
+RETRIEVAL_METHOD=live
+LANGUAGE=fr
+TZ=America/Montreal
 HASS_DISCOVERY_ENABLED=false
 HASS_DISCOVERY_PREFIX=homeassistant
 MQTT_REFRESH_TOPIC=rtl/schedule/refresh
 MQTT_STATE_TOPIC=home/transit/bus/stop_32752
+MORNING_RUSH_START=06:00
+MORNING_RUSH_END=09:00
+EVENING_RUSH_START=15:00
+EVENING_RUSH_END=18:00
 ```
+
+### Configuration Options
+
+| Environment Variable | Description | Default |
+| --- | --- | --- |
+| `MODE` | Application mode (`http` or `mqtt`) | `http` |
+| `STOP_CODE` | RTL public stop code (Required for MQTT mode) | None |
+| `TARGET_DIRECTION` | Filter for a specific bus direction/headsign | `Direction Terminus Panama` |
+| `RETRIEVAL_METHOD` | Data source strategy (`live` or `gtfs`) | `live` |
+| `LANGUAGE` | Output language (`en` or `fr`) | `fr` |
+| `TZ` | Timezone for the application | `America/Montreal` |
+| `MQTT_HOST` | MQTT broker hostname | None |
+| `MQTT_PORT` | MQTT broker port | `1883` |
+| `MQTT_USERNAME` | MQTT username | None |
+| `MQTT_PASSWORD` | MQTT password | None |
+| `MQTT_USE_TLS` | Enable TLS for MQTT connection | `false` |
+| `HASS_DISCOVERY_ENABLED`| Enable Home Assistant MQTT Discovery | `false` |
+| `HASS_DISCOVERY_PREFIX` | Home Assistant discovery prefix | `homeassistant` |
+| `MORNING_RUSH_START` | Morning rush hour start time (HH:MM) | `06:00` |
+| `MORNING_RUSH_END` | Morning rush hour end time (HH:MM) | `09:00` |
+| `EVENING_RUSH_START` | Evening rush hour start time (HH:MM) | `15:00` |
+| `EVENING_RUSH_END` | Evening rush hour end time (HH:MM) | `18:00` |
+| `MQTT_REFRESH_TOPIC` | Topic to trigger immediate refresh | `rtl/schedule/refresh` |
+| `MQTT_STATE_TOPIC` | Topic for publishing schedule updates | `home/transit/bus/stop_<STOP_CODE>` |
 
 Then run the container with the following command:
 
