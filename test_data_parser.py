@@ -66,8 +66,15 @@ def test_get_next_stop(mock_is_file_expired, mock_hastus_scraper, gtfs_zip_file)
 
 @patch('data_parser.RETRIEVAL_METHOD', 'live')
 @patch('data_parser.HastusScraper')
-def test_get_next_stop_live_mode(mock_hastus_scraper):
+@patch('data_parser.is_file_expired', return_value=False)
+@patch('os.path.isfile', return_value=True)
+@patch('data_parser.read_csv')
+@patch('zipfile.ZipFile')
+def test_get_next_stop_live_mode(mock_zipfile, mock_read_csv, mock_isfile, mock_is_file_expired, mock_hastus_scraper):
     """Verifies that in 'live' mode, it uses HastusScraper and skips GTFS."""
+    # Mock dataframes to avoid initialization errors
+    mock_read_csv.return_value = MagicMock()
+    
     mock_scraper_inst = mock_hastus_scraper.return_value
     mock_scraper_inst.get_schedule.return_value = [
         {
