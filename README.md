@@ -3,6 +3,7 @@
 
 [![Docker CI](https://github.com/richie256/rtl-schedule/actions/workflows/dockerimage.yml/badge.svg)](https://github.com/richie256/rtl-schedule/actions/workflows/dockerimage.yml)
 [![Unit Tests](https://github.com/richie256/rtl-schedule/actions/workflows/tests.yml/badge.svg)](https://github.com/richie256/rtl-schedule/actions/workflows/tests.yml)
+[![codecov](https://codecov.io/gh/richie256/rtl-schedule/graph/badge.svg?token=)](https://codecov.io/gh/richie256/rtl-schedule)
 [![Latest Release](https://img.shields.io/github/v/release/richie256/rtl-schedule)](https://github.com/richie256/rtl-schedule/releases)
 [![Last Commit](https://img.shields.io/github/last-commit/richie256/rtl-schedule)](https://github.com/richie256/rtl-schedule/commits/main)
 [![Python Version](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/release/python-3120/)
@@ -195,3 +196,19 @@ export STOP_CODE=your_stop_code
 export MQTT_HOST=your_mqtt_broker_host
 python app.py
 ```
+
+## Codecov Configuration
+
+To enable code coverage reporting with Codecov, follow these steps:
+
+1.  **Sign up for Codecov:** Go to [codecov.io](https://codecov.io/) and sign up with your GitHub account.
+2.  **Connect your repository:** Find and activate the `rtl-schedule` repository in your Codecov dashboard.
+3.  **Get the Repository Upload Token:**
+    - Navigate to the repository settings in Codecov.
+    - Locate the `CODECOV_TOKEN`.
+4.  **Add the token to GitHub Secrets:**
+    - Go to your GitHub repository: `Settings` > `Secrets and variables` > `Actions`.
+    - Create a new repository secret named `CODECOV_TOKEN` and paste the token from Codecov.
+5.  **Trigger the CI:**
+    - Push a new commit or manual trigger the Unit Tests workflow.
+    - Coverage reports will be automatically uploaded to Codecov, and the badge in the README will update to show the current coverage percentage.
