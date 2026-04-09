@@ -93,3 +93,72 @@ def test_get_next_stop_live_mode(mock_zipfile, mock_read_csv, mock_isfile, mock_
     assert next_stop.retrieve_method == 'live scraper'
     assert next_stop.route_id == '44'
     mock_scraper_inst.get_schedule.assert_called_once()
+
+def test_load_data_file_not_found(mocker):
+    mocker.patch('os.path.isfile', return_value=False)
+    mocker.patch('data_parser.is_file_expired', return_value=False)
+    mocker.patch('data_parser.ParseRTLData._download_gtfs_file', side_effect=FileNotFoundError)
+    with pytest.raises(FileNotFoundError):
+        ParseRTLData()
+
+def test_load_data_bad_zip(mocker):
+    mocker.patch('os.path.isfile', return_value=True)
+    mocker.patch('data_parser.is_file_expired', return_value=False)
+    from zipfile import BadZipFile
+    mocker.patch('zipfile.ZipFile', side_effect=BadZipFile)
+    with pytest.raises(BadZipFile):
+        ParseRTLData()
+
+@patch('data_parser.requests.get')
+def test_download_gtfs_file(mock_get, mocker):
+    mock_res = MagicMock()
+    mock_res.content = b'fake zip content'
+    mock_get.return_value = mock_res
+    
+    mocker.patch('builtins.open', mocker.mock_open())
+    ParseRTLData._download_gtfs_file('fake_path.zip')
+    mock_get.assert_called_once()
+
+@patch('data_parser.is_file_expired', return_value=False)
+def test_get_stop_id_not_found(mock_is_file_expired, gtfs_zip_file):
+    parser = ParseRTLData()
+    assert parser.get_stop_id(999) is None
+
+@patch('data_parser.is_file_expired', return_value=False)
+def test_get_service_id_with_exceptions(mock_is_file_expired, mocker):
+    # Setup GTFS with calendar_dates.txt
+    with ZipFile(RTL_GTFS_ZIP_FILE, 'w') as zf:
+        zf.writestr('stops.txt', 'stop_id,stop_code\n1,123')
+        zf.writestr('calendar.txt', 'service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\n1,1,1,1,1,1,0,0,20250101,20251231')
+        zf.writestr('stop_times.txt', 'trip_id,arrival_time,departure_time,stop_id,stop_sequence\n1,10:00:00,10:00:30,1,1')
+        zf.writestr('trips.txt', 'route_id,service_id,trip_id,trip_headsign\n101,1,1,Panama')
+        # Add a date exception: remove service 1 on a Monday (2025-09-29)
+        zf.writestr('calendar_dates.txt', 'service_id,date,exception_type\n1,20250929,2\n2,20250929,1')
+    
+    parser = ParseRTLData()
+    # 2025-09-29 is Monday. Regular service 1 is removed, service 2 is added.
+    assert parser._get_service_id(datetime.date(2025, 9, 29)) == 2
+    
+    if os.path.exists(RTL_GTFS_ZIP_FILE):
+        os.remove(RTL_GTFS_ZIP_FILE)
+
+@patch('data_parser.is_file_expired', return_value=False)
+def test_calculate_arrival_datetimes_midnight(mock_is_file_expired, gtfs_zip_file):
+    parser = ParseRTLData()
+    df = pd.DataFrame({
+        'arrival_time': ['24:15:00', '08:00:00'],
+        'trip_id': [1, 2]
+    })
+    date = datetime.date(2025, 9, 29)
+    result = parser._calculate_arrival_datetimes(df, date)
+    # 08:00:00 today comes first
+    assert result.iloc[0]['arrival_datetime'] == datetime.datetime(2025, 9, 29, 8, 0, 0)
+    # 24:15:00 becomes 00:15:00 next day (tomorrow)
+    assert result.iloc[1]['arrival_datetime'] == datetime.datetime(2025, 9, 30, 0, 15, 0)
+
+@patch('data_parser.is_file_expired', return_value=False)
+def test_get_stop_date_range(mock_is_file_expired, gtfs_zip_file):
+    parser = ParseRTLData()
+    min_d, max_d = parser._get_stop_date_range(1)
+    assert min_d == 20250101
+    assert max_d == 20251231

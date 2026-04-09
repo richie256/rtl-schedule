@@ -1,6 +1,7 @@
 
 import datetime
 import pytest
+import json
 from unittest.mock import patch, MagicMock
 from hastus_scraper import HastusScraper
 from const import TARGET_DIRECTION
@@ -134,3 +135,77 @@ def test_hastus_scraper_filtering_logic(scraper, mocker):
             assert TARGET_DIRECTION in a['trip_headsign']
         # Should only have arrivals for Panama
         assert all("Terminus Panama" in a['trip_headsign'] for a in arrivals)
+
+def test_parse_html_weekly_schedule(scraper):
+    html = """
+    <table>
+        <tr><td><b>Semaine</b></td></tr>
+        <tr><td>08:00</td></tr>
+        <tr><td>25:15</td></tr>
+    </table>
+    <table>
+        <tr><td><b>Samedi</b></td></tr>
+        <tr><td>09:00</td></tr>
+    </table>
+    <table>
+        <tr><td><b>Dimanche</b></td></tr>
+        <tr><td>10:00</td></tr>
+    </table>
+    """
+    data = scraper._parse_html_weekly_schedule(html)
+    assert len(data['semaine']) == 2
+    assert data['semaine'][0] == datetime.time(1, 15) # 25:15 % 24
+    assert data['semaine'][1] == datetime.time(8, 0)
+    assert data['samedi'][0] == datetime.time(9, 0)
+    assert data['dimanche'][0] == datetime.time(10, 0)
+
+def test_parse_json_weekly_schedule(scraper):
+    json_data = {
+        'data': [
+            {'scheduledarrival': 28800, 'date': '2026-03-16T00:00:00Z'}, # Mon 08:00
+            {'scheduledarrival': 32400, 'date': '2026-03-21T00:00:00Z'}, # Sat 09:00
+            {'scheduledarrival': 36000, 'date': '2026-03-22T00:00:00Z'}  # Sun 10:00
+        ]
+    }
+    week_start = datetime.date(2026, 3, 16)
+    data = scraper._parse_json_weekly_schedule(json_data, week_start)
+    assert data['semaine'][0] == datetime.time(8, 0)
+    assert data['samedi'][0] == datetime.time(9, 0)
+    assert data['dimanche'][0] == datetime.time(10, 0)
+
+def test_get_stop_code_from_id(scraper):
+    scraper.stop_mappings = {"32752": ["15:2752"], "12345": ["15:6789"]}
+    assert scraper.get_stop_code_from_id(2752) == "32752"
+    assert scraper.get_stop_code_from_id(6789) == "12345"
+    assert scraper.get_stop_code_from_id(9999) is None
+
+def test_load_save_cache(scraper, mocker):
+    mocker.patch("os.path.exists", return_value=True)
+    cache_data = {
+        "2752|P1|2026-03-16": {
+            "semaine": ["08:00:00"],
+            "samedi": [],
+            "dimanche": []
+        }
+    }
+    mocker.patch("builtins.open", mocker.mock_open(read_data=json.dumps(cache_data)))
+    
+    scraper._load_cache()
+    key = ("2752", "P1", datetime.date(2026, 3, 16))
+    assert key in scraper.schedule_cache
+    assert scraper.schedule_cache[key]['semaine'][0] == datetime.time(8, 0)
+
+    # Test save
+    mock_open = mocker.patch("builtins.open", mocker.mock_open())
+    mocker.patch("os.makedirs")
+    scraper._save_cache()
+    assert mock_open.called
+
+def test_initialize_error(scraper, mocker):
+    mock_res = MagicMock()
+    mock_res.raise_for_status.side_effect = Exception("Network Error")
+    mocker.patch.object(scraper.session, 'get', return_value=mock_res)
+    
+    scraper.buildtime = None
+    scraper._initialize()
+    assert scraper.buildtime is None

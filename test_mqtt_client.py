@@ -116,3 +116,76 @@ def test_publish_schedule(mock_cfg_inst):
     assert payload['nextstop_nbrmins'] == 15
     assert payload['nextstop_nbrsecs'] == 0
     assert payload['retrieve_method'] == t["gtfs"]
+
+@patch('mqtt_client.config')
+def test_publish_schedule_live_scraper(mock_cfg_inst):
+    mock_cfg_inst.stop_code = 12345
+    mock_cfg_inst.mqtt_state_topic = "topic"
+    mock_cfg_inst.language = "fr"
+
+    mock_client = MagicMock()
+    mock_rtl_data = MagicMock()
+    
+    mock_next_stop = MagicMock()
+    mock_next_stop.arrival_datetime = datetime.datetime.now() + datetime.timedelta(minutes=5)
+    mock_next_stop.retrieve_method = "live scraper"
+    mock_rtl_data.get_next_stop.return_value = mock_next_stop
+    
+    publish_schedule(mock_client, mock_rtl_data, "stop_id")
+    
+    args, _ = mock_client.publish.call_args
+    payload = json.loads(args[1])
+    assert payload['retrieve_method'] == TRANSLATIONS["fr"]["live_scraper"]
+
+@patch('mqtt_client.config')
+def test_publish_schedule_no_bus(mock_cfg_inst):
+    mock_cfg_inst.stop_code = 12345
+    mock_cfg_inst.mqtt_state_topic = "topic"
+
+    mock_client = MagicMock()
+    mock_rtl_data = MagicMock()
+    mock_rtl_data.get_next_stop.return_value = None
+    
+    with patch('mqtt_client._LOGGER') as mock_logger:
+        publish_schedule(mock_client, mock_rtl_data, "stop_id")
+        mock_client.publish.assert_not_called()
+
+@patch('mqtt_client.config')
+def test_start_mqtt_client_missing_stop_code(mock_cfg_inst):
+    mock_cfg_inst.stop_code = None
+    with patch('mqtt_client._LOGGER') as mock_logger:
+        from mqtt_client import start_mqtt_client
+        start_mqtt_client()
+        mock_logger.error.assert_called_with("STOP_CODE environment variable is required but missing or invalid.")
+
+@patch('mqtt_client.config')
+@patch('mqtt_client.mqtt.Client')
+@patch('mqtt_client.ParseRTLData')
+@patch('mqtt_client.time.sleep', side_effect=KeyboardInterrupt)
+def test_start_mqtt_client_loop(mock_sleep, mock_rtl_parser, mock_mqtt_client, mock_cfg_inst):
+    mock_cfg_inst.stop_code = "12345"
+    mock_cfg_inst.mqtt_host = "localhost"
+    mock_cfg_inst.mqtt_port = 1883
+    mock_cfg_inst.mqtt_username = "user"
+    mock_cfg_inst.mqtt_password = "pass"
+    mock_cfg_inst.mqtt_use_tls = False
+    mock_cfg_inst.mqtt_refresh_topic = "refresh"
+    mock_cfg_inst.hass_discovery_enabled = False
+    mock_cfg_inst.morning_rush_start = "06:00"
+    mock_cfg_inst.morning_rush_end = "09:00"
+    mock_cfg_inst.evening_rush_start = "15:00"
+    mock_cfg_inst.evening_rush_end = "18:00"
+    mock_cfg_inst.language = "fr"
+    
+    mock_parser_inst = mock_rtl_parser.return_value
+    mock_parser_inst.get_stop_id.return_value = "stop_id_123"
+    mock_parser_inst.get_next_stop.return_value = None
+    
+    from mqtt_client import start_mqtt_client
+    try:
+        start_mqtt_client()
+    except KeyboardInterrupt:
+        pass
+    
+    mock_mqtt_client.return_value.connect.assert_called_with("localhost", 1883)
+    mock_mqtt_client.return_value.loop_start.assert_called()

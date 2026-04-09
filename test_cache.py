@@ -1,55 +1,76 @@
 import datetime
-import logging
-import sys
+import pytest
+from unittest.mock import MagicMock, patch
 from hastus_scraper import HastusScraper
 
-# Setup logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("rtl-schedule")
+@pytest.fixture
+def scraper():
+    with patch('hastus_scraper.HastusScraper._initialize'), \
+         patch('hastus_scraper.HastusScraper._load_cache'):
+        scraper = HastusScraper()
+        scraper.buildtime = "20260408"
+        return scraper
 
-def main():
-    scraper = HastusScraper()
-    
-    # Test stop code
+def test_cache_logic(scraper):
     stop_code = "32752"
-    patterns = scraper.get_stop_patterns(stop_code)
-    if not patterns:
-        logger.error(f"No patterns found for stop {stop_code}")
-        return
-
-    test_pattern = patterns[0] # 44 Direction Terminus Panama
+    test_pattern = {
+        'stop': '2752',
+        'pattern': '44_1_1',
+        'code': '44',
+        'desc': 'Direction Terminus Panama',
+        'ligne': '44 Direction Terminus Panama'
+    }
     
-    # Monday
-    mon = datetime.date(2026, 3, 16)
-    logger.info("--- Fetching Monday (Should trigger SCRAPE) ---")
-    mon_schedule = scraper.get_schedule_by_params(test_pattern, mon)
-    logger.info(f"Monday count: {len(mon_schedule)}")
+    # Mock get_stop_patterns to return our test pattern
+    scraper.get_stop_patterns = MagicMock(return_value=[test_pattern])
     
-    # Tuesday (Same week)
-    tue = datetime.date(2026, 3, 17)
-    logger.info("--- Fetching Tuesday (Should use CACHE) ---")
-    tue_schedule = scraper.get_schedule_by_params(test_pattern, tue)
-    logger.info(f"Tuesday count: {len(tue_schedule)}")
+    # Mock _get_times_from_cache to return some times
+    t1 = datetime.datetime(2026, 3, 16, 8, 0)
+    t2 = datetime.datetime(2026, 3, 17, 8, 0)
     
-    # Saturday (Same week)
-    sat = datetime.date(2026, 3, 21)
-    logger.info("--- Fetching Saturday (Should use CACHE) ---")
-    sat_schedule = scraper.get_schedule_by_params(test_pattern, sat)
-    logger.info(f"Saturday count: {len(sat_schedule)}")
+    with patch.object(scraper, 'session') as mock_session:
+        # Mock landing page response
+        mock_landing_res = MagicMock()
+        mock_landing_res.text = '<a href="madOper.php?q=stops_stoptimes&p=2752&s=RTL&web=&pp=44_1_1&l=44&t=regulier">link</a>'
+        
+        # Mock service period response
+        mock_period_res = MagicMock()
+        mock_period_res.json.return_value = {
+            'data': [
+                {'scheduledarrival': 8 * 3600, 'date': '2026-03-16T00:00:00Z'},
+                {'scheduledarrival': 8 * 3600, 'date': '2026-03-17T00:00:00Z'},
+                {'scheduledarrival': 9 * 3600, 'date': '2026-03-21T00:00:00Z'},
+                {'scheduledarrival': 10 * 3600, 'date': '2026-03-22T00:00:00Z'}
+            ]
+        }
+        
+        mock_session.get.side_effect = [mock_landing_res, mock_period_res]
+        
+        # Monday - Should trigger SCRAPE (and cache)
+        mon = datetime.date(2026, 3, 16)
+        mon_schedule = scraper.get_schedule_by_params(test_pattern, mon)
+        assert len(mon_schedule) == 1
+        assert mon_schedule[0].time() == datetime.time(8, 0)
+        assert mock_session.get.call_count == 2
+        
+        # Tuesday - Should use CACHE
+        tue = datetime.date(2026, 3, 17)
+        tue_schedule = scraper.get_schedule_by_params(test_pattern, tue)
+        assert len(tue_schedule) == 1
+        assert tue_schedule[0].time() == datetime.time(8, 0)
+        # Call count should still be 2
+        assert mock_session.get.call_count == 2
+        
+        # Saturday - Should use CACHE
+        sat = datetime.date(2026, 3, 21)
+        sat_schedule = scraper.get_schedule_by_params(test_pattern, sat)
+        assert len(sat_schedule) == 1
+        assert sat_schedule[0].time() == datetime.time(9, 0)
+        assert mock_session.get.call_count == 2
 
-    # Sunday (Same week)
-    sun = datetime.date(2026, 3, 22)
-    logger.info("--- Fetching Sunday (Should use CACHE) ---")
-    sun_schedule = scraper.get_schedule_by_params(test_pattern, sun)
-    logger.info(f"Sunday count: {len(sun_schedule)}")
-
-    # Check if Mon and Tue are same (they use the 'semaine' category)
-    if len(mon_schedule) == len(tue_schedule):
-        logger.info("SUCCESS: Monday and Tuesday have same number of arrivals (cached 'semaine')")
-    
-    # Check if Sat is different
-    if len(sat_schedule) != len(mon_schedule):
-        logger.info(f"SUCCESS: Saturday has different number of arrivals ({len(sat_schedule)} vs {len(mon_schedule)})")
-
-if __name__ == "__main__":
-    main()
+        # Sunday - Should use CACHE
+        sun = datetime.date(2026, 3, 22)
+        sun_schedule = scraper.get_schedule_by_params(test_pattern, sun)
+        assert len(sun_schedule) == 1
+        assert sun_schedule[0].time() == datetime.time(10, 0)
+        assert mock_session.get.call_count == 2

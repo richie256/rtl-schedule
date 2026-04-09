@@ -1,35 +1,37 @@
 import datetime
-import logging
-import sys
+import pytest
+from unittest.mock import MagicMock, patch
 from hastus_scraper import HastusScraper
 
-# Setup logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("rtl-schedule")
+@pytest.fixture
+def scraper():
+    with patch('hastus_scraper.HastusScraper._initialize'), \
+         patch('hastus_scraper.HastusScraper._load_cache'):
+        scraper = HastusScraper()
+        return scraper
 
-def main():
-    scraper = HastusScraper()
-    
-    # Internal stop_id for 32752 is 2752
+def test_get_schedule_fallback(scraper):
     stop_id = 2752
     today = datetime.date(2026, 3, 16)
     
-    logger.info(f"--- Testing get_schedule filtering for stop_id: {stop_id} ---")
-    arrivals = scraper.get_schedule(stop_id, today)
-    
-    if arrivals:
-        logger.info(f"SUCCESS: Found {len(arrivals)} filtered arrivals.")
-        for a in arrivals[:5]:
-            logger.info(f" - [{a['route_id']}] {a['trip_headsign']} at {a['arrival_time']}")
+    with patch.object(scraper, 'get_stop_code_from_id') as mock_get_code, \
+         patch.object(scraper, 'get_stop_patterns') as mock_get_patterns, \
+         patch.object(scraper, 'get_schedule_by_params') as mock_get_schedule:
+        
+        mock_get_code.return_value = "32752"
+        mock_get_patterns.return_value = [
+            {'ligne': '44 Direction Terminus Panama', 'stop': '2752', 'pattern': '44_1_1'},
+            {'ligne': 'Other line', 'stop': '2752', 'pattern': 'OTHER'}
+        ]
+        mock_get_schedule.return_value = [datetime.datetime(2026, 3, 16, 8, 0)]
+        
+        # We need to mock TARGET_DIRECTION from const as well
+        with patch('hastus_scraper.TARGET_DIRECTION', 'Terminus Panama'):
+            arrivals = scraper.get_schedule(stop_id, today)
             
-        # Verify all contains "Terminus Panama"
-        all_panama = all("Terminus Panama" in a['trip_headsign'] for a in arrivals)
-        if all_panama:
-            logger.info("VERIFIED: All arrivals are for 'Direction Terminus Panama'")
-        else:
-            logger.error("FAILED: Some arrivals are for other directions!")
-    else:
-        logger.error("FAILED: No arrivals found using fallback logic.")
-
-if __name__ == "__main__":
-    main()
+            assert len(arrivals) == 1
+            assert arrivals[0]['route_id'] == '44'
+            assert 'Terminus Panama' in arrivals[0]['trip_headsign']
+            
+            # Check if get_schedule_by_params was called only once for the target direction
+            assert mock_get_schedule.call_count == 1
