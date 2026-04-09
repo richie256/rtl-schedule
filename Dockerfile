@@ -16,4 +16,7 @@ RUN mkdir -p /data
 ENV TZ=America/Montreal
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && dpkg-reconfigure -f noninteractive tzdata
 
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD if [ "$MODE" = "mqtt" ]; then pgrep python; else curl -f http://localhost:80/health || exit 1; fi
+
 CMD ["python", "app.py"]
