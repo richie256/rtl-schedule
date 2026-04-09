@@ -2,9 +2,9 @@ name: Unit Tests
 
 on:
   push:
-    branches: [ "main", "fix_update" ]
+    branches: [ "master", "fix_update" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "master" ]
 
 jobs:
   test:
