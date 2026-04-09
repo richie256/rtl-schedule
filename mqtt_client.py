@@ -167,6 +167,13 @@ def start_mqtt_client():
             
             publish_schedule(client, rtl_data, stop_id)
             
+            # Update heartbeat file for health check
+            try:
+                with open("/tmp/mqtt_heartbeat", "w") as f:
+                    f.write(str(time.time()))
+            except Exception as e:
+                _LOGGER.error(f"Failed to update heartbeat file: {e}")
+            
             _LOGGER.info(t["waiting_for"].format(interval=interval), extra={"interval": interval})
             time.sleep(interval)
     finally:
