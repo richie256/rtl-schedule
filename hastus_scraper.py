@@ -157,7 +157,7 @@ class HastusScraper:
                     return code
         return None
 
-    def get_stop_patterns(self, stop_code: str, stop_id: Optional[int] = None, date: Optional[datetime.date] = None) -> List[Dict]:
+    def get_stop_patterns(self, stop_code: str, stop_id: Optional[int] = None) -> List[Dict]:
         """Fetch available patterns/routes for a given stop code."""
         if not self._mappings_fetched:
             self.fetch_stop_mappings()
@@ -180,8 +180,6 @@ class HastusScraper:
                 "s": "RTL",
                 "web": ""
             }
-            if date:
-                params["d"] = date.strftime("%Y%m%d")
                 
             try:
                 response = self.session.get(self.BASE_URL, params=params, timeout=15)
@@ -398,7 +396,7 @@ class HastusScraper:
             return []
             
         _LOGGER.info(f"Fallback: Discovered stop code {stop_code} for ID {stop_id}")
-        patterns = self.get_stop_patterns(stop_code, stop_id=stop_id, date=date)
+        patterns = self.get_stop_patterns(stop_code, stop_id=stop_id)
         
         if not patterns:
             _LOGGER.warning(f"No patterns found for stop code {stop_code}")
