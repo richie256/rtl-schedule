@@ -162,13 +162,13 @@ def test_parse_html_weekly_schedule(scraper):
 def test_parse_json_weekly_schedule(scraper):
     json_data = {
         'data': [
-            {'scheduledarrival': 28800, 'date': '2026-03-16T00:00:00Z'}, # Mon 08:00
-            {'scheduledarrival': 32400, 'date': '2026-03-21T00:00:00Z'}, # Sat 09:00
-            {'scheduledarrival': 36000, 'date': '2026-03-22T00:00:00Z'}  # Sun 10:00
+            {'scheduledarrival': 28800, 'date': '2026-03-16T00:00:00Z', 'stopid': 'S1', 'id': 'P1:01'}, # Mon 08:00
+            {'scheduledarrival': 32400, 'date': '2026-03-21T00:00:00Z', 'stopid': 'S1', 'id': 'P1:02'}, # Sat 09:00
+            {'scheduledarrival': 36000, 'date': '2026-03-22T00:00:00Z', 'stopid': 'S1', 'id': 'P1:03'}  # Sun 10:00
         ]
     }
-    week_start = datetime.date(2026, 3, 16)
-    data = scraper._parse_json_weekly_schedule(json_data, week_start)
+    target_date = datetime.date(2026, 3, 16)
+    data = scraper._parse_json_weekly_schedule(json_data, 'S1', 'P1', target_date)
     assert data['semaine'][0] == datetime.time(8, 0)
     assert data['samedi'][0] == datetime.time(9, 0)
     assert data['dimanche'][0] == datetime.time(10, 0)
