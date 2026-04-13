@@ -39,6 +39,7 @@ class HastusScraper:
     def __init__(self):
         self.buildtime = None
         self.stop_mappings = {} # stop_code (str) -> list of (feed_id:stop_id)
+        self._mappings_fetched = False
         # cache: (stop_id, pattern_id, week_start_date) -> { 'weekday': [...], 'samedi': [...], 'dimanche': [...] }
         self.schedule_cache = {} 
         
@@ -137,6 +138,7 @@ class HastusScraper:
                         self.stop_mappings[stop_code] = []
                     if internal_id not in self.stop_mappings[stop_code]:
                         self.stop_mappings[stop_code].append(internal_id)
+            self._mappings_fetched = True
             _LOGGER.info(f"Fetched {len(self.stop_mappings)} stop mappings.")
         except requests.exceptions.RequestException as e:
             _LOGGER.error(f"Network error while fetching stop mappings: {e}")
@@ -145,7 +147,7 @@ class HastusScraper:
 
     def get_stop_code_from_id(self, stop_id: int) -> Optional[str]:
         """Find the public stop code for a given internal stop_id."""
-        if not self.stop_mappings:
+        if not self._mappings_fetched:
             self.fetch_stop_mappings()
         
         target_id_suffix = f":{stop_id}"
@@ -155,15 +157,20 @@ class HastusScraper:
                     return code
         return None
 
-    def get_stop_patterns(self, stop_code: str) -> List[Dict]:
+    def get_stop_patterns(self, stop_code: str, stop_id: Optional[int] = None, date: Optional[datetime.date] = None) -> List[Dict]:
         """Fetch available patterns/routes for a given stop code."""
-        if not self.stop_mappings:
+        if not self._mappings_fetched:
             self.fetch_stop_mappings()
         
         internal_ids = self.stop_mappings.get(stop_code, [])
         if not internal_ids:
-            # Fallback to guessing feed 15 if not in mapping
-            internal_ids = [f"15:{stop_code}"]
+            if stop_id:
+                # Try common feed IDs
+                internal_ids = [f"15:{stop_id}", f"14:{stop_id}", f"1:{stop_id}"]
+                _LOGGER.info(f"Stop code {stop_code} not in mapping, trying fallback IDs: {internal_ids}")
+            else:
+                # Fallback to guessing feed 15 if not in mapping
+                internal_ids = [f"15:{stop_code}"]
             
         patterns = []
         for p_id in internal_ids:
@@ -173,9 +180,15 @@ class HastusScraper:
                 "s": "RTL",
                 "web": ""
             }
+            if date:
+                params["d"] = date.strftime("%Y%m%d")
+                
             try:
                 response = self.session.get(self.BASE_URL, params=params, timeout=15)
-                patterns.extend(self._parse_patterns_html(response.text))
+                new_patterns = self._parse_patterns_html(response.text)
+                if not new_patterns and response.text:
+                    _LOGGER.debug(f"No patterns found in response for {p_id}. Response snippet: {response.text[:200]}")
+                patterns.extend(new_patterns)
             except Exception as e:
                 _LOGGER.error(f"Failed to fetch patterns for {p_id}: {e}")
                 
@@ -185,10 +198,12 @@ class HastusScraper:
     def _parse_patterns_html(self, html: str) -> List[Dict]:
         """Parse the HTML from stops_patterns to extract urlHoraireArret parameters."""
         patterns = []
-        pattern = re.compile(r"urlHoraireArret\((.*?)\);")
+        # Support both single and double quotes, and optional spaces
+        pattern = re.compile(r"urlHoraireArret\s*\((.*?)\)\s*;")
         matches = pattern.findall(html)
         for match in matches:
-            args = [arg.strip().strip("'") for arg in match.split(',')]
+            # More robust argument splitting
+            args = [arg.strip().strip("'\"") for arg in match.split(',')]
             if len(args) >= 5:
                 patterns.append({
                     "stop": args[0],
@@ -383,7 +398,7 @@ class HastusScraper:
             return []
             
         _LOGGER.info(f"Fallback: Discovered stop code {stop_code} for ID {stop_id}")
-        patterns = self.get_stop_patterns(stop_code)
+        patterns = self.get_stop_patterns(stop_code, stop_id=stop_id, date=date)
         
         if not patterns:
             _LOGGER.warning(f"No patterns found for stop code {stop_code}")
