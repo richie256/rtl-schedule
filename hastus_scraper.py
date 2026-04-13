@@ -267,7 +267,7 @@ class HastusScraper:
                     json_data = response.json()
                     if isinstance(json_data, dict) and 'data' in json_data:
                         _LOGGER.info("Successfully fetched JSON schedule")
-                        period_data = self._parse_json_weekly_schedule(json_data, week_start)
+                        period_data = self._parse_json_weekly_schedule(json_data, params['stop'], params['pattern'], date)
                         for cat in combined_weekly_data:
                             combined_weekly_data[cat].extend(period_data[cat])
                     else:
@@ -293,24 +293,48 @@ class HastusScraper:
             _LOGGER.error(traceback.format_exc())
             return []
 
-    def _parse_json_weekly_schedule(self, json_data: Dict, week_start: datetime.date) -> Dict[str, List[datetime.time]]:
-        """Parse the new JSON format into weekly categories."""
+    def _parse_json_weekly_schedule(self, json_data: Dict, stop_id: str, pattern_id: str, target_date: datetime.date) -> Dict[str, List[datetime.time]]:
+        """Parse the new JSON format into weekly categories, filtering by stop and pattern."""
         weekly_data = {'semaine': [], 'samedi': [], 'dimanche': []}
 
-        # In the JSON, each entry has a 'date' or we can look at its day of week.
-        for entry in json_data.get('data', []):
+        data_entries = json_data.get('data', [])
+
+        # The JSON might contain multiple stops/patterns if the URL didn't filter strictly enough
+        for entry in data_entries:
+            # Check if this entry matches our requested stop and pattern
+            # The 'id' field in JSON is often 'pattern_id:index' (e.g. '15:44:1:01')
+            if entry.get('stopid') != stop_id or not entry.get('id', '').startswith(f"{pattern_id}:"):
+                continue
+
             arrival_seconds = entry.get('scheduledarrival')
             if arrival_seconds is None: continue
 
             # Convert seconds since midnight to time
-            h, m = divmod(arrival_seconds // 60, 60)
-            t = datetime.time(h % 24, m)
+            try:
+                h, m = divmod(arrival_seconds // 60, 60)
+                t = datetime.time(h % 24, m)
+            except (ValueError, OverflowError):
+                _LOGGER.error(f"Invalid arrival seconds: {arrival_seconds}")
+                continue
 
             # Identify which day this belongs to
             date_str = entry.get('date')
             if date_str:
-                entry_date = datetime.datetime.fromisoformat(date_str.replace('Z', '+00:00')).date()
-                weekday = entry_date.weekday()
+                try:
+                    entry_date = datetime.datetime.fromisoformat(date_str.replace('Z', '+00:00')).date()
+                    weekday = entry_date.weekday()
+                    if weekday < 5:
+                        weekly_data['semaine'].append(t)
+                    elif weekday == 5:
+                        weekly_data['samedi'].append(t)
+                    else:
+                        weekly_data['dimanche'].append(t)
+                except ValueError:
+                    _LOGGER.error(f"Failed to parse date string in JSON: {date_str}")
+            else:
+                # Fallback if no date is provided: use the target_date's category
+                # This is less ideal for filling the whole cache but better than nothing
+                weekday = target_date.weekday()
                 if weekday < 5:
                     weekly_data['semaine'].append(t)
                 elif weekday == 5:
