@@ -100,7 +100,7 @@ def publish_schedule(client, rtl_data, stop_id):
             'retrieve_method': localized_method
         }
         topic = config.mqtt_state_topic
-        client.publish(topic, json.dumps(payload))
+        client.publish(topic, json.dumps(payload), retain=True)
         _LOGGER.info(f"Published to MQTT topic '{topic}'", extra={"topic": topic, "payload": payload})
     else:
         _LOGGER.info(t["no_more_buses"])
@@ -123,6 +123,7 @@ def start_mqtt_client():
 
     is_refresh_active = False
     refresh_end_time = None
+    last_discovery_publish = 0
 
     client = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2, protocol=mqtt.MQTTv5)
 
@@ -147,9 +148,6 @@ def start_mqtt_client():
     client.subscribe(config.mqtt_refresh_topic)
     client.loop_start()
 
-    if config.hass_discovery_enabled:
-        publish_hass_discovery_config(client, config.stop_code, config.hass_discovery_prefix)
-
     stop_id = rtl_data.get_stop_id(config.stop_code)
     if stop_id is None:
         _LOGGER.error(f"Stop code {config.stop_code} not found.")
@@ -157,6 +155,12 @@ def start_mqtt_client():
 
     try:
         while True:
+            # Re-publish discovery config every 12 hours
+            current_time = time.time()
+            if config.hass_discovery_enabled and (current_time - last_discovery_publish >= 12 * 3600):
+                publish_hass_discovery_config(client, config.stop_code, config.hass_discovery_prefix)
+                last_discovery_publish = current_time
+
             if is_refresh_active:
                 if datetime.datetime.now() >= refresh_end_time:
                     is_refresh_active = False

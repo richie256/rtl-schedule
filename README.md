@@ -122,6 +122,8 @@ docker run --env-file .env -v ./data:/data -e MODE=mqtt rtl-schedule
     -   Every 10 seconds during rush hours (weekdays 6:00-9:00 and 15:00-18:00).
     -   Every 60 seconds at all other times.
 -   **Payload:** The message payload is a JSON object containing schedule information.
+-   **Persistence:** All MQTT messages are published with the `retain` flag set to `True`.
+-   **Home Assistant Discovery:** When enabled, discovery information is re-published every 12 hours to ensure Home Assistant remains up to date.
 
 #### MQTT Refresh Action
 
