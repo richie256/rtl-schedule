@@ -83,6 +83,7 @@ def test_publish_hass_discovery_config(mock_cfg_inst):
     assert payload_dict['name'] == t["next_bus_at_stop"].format(stop_code=stop_code)
     assert payload_dict['unique_id'] == f"rtl_schedule_{stop_code}"
     assert payload_dict['state_topic'] == "home/transit/bus/stop_12345"
+    assert "trip_headsign" in payload_dict['json_attributes_template']
 
 @patch('mqtt_client.config')
 @freeze_time("2023-03-15 07:30:00")

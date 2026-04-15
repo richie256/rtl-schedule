@@ -58,6 +58,7 @@ def publish_hass_discovery_config(client, stop_code, discovery_prefix):
         "unique_id": object_id,
         "icon": "mdi:bus-clock",
         "device_class": "timestamp",
+        "json_attributes_template": "{{ {'trip_headsign': value_json.trip_headsign} | tojson }}",
         "device": {
             "identifiers": ["rtl_schedule"],
             "name": t["rtl_schedule"],
