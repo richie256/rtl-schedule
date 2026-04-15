@@ -51,7 +51,7 @@ def test_get_schedule_by_params(scraper):
         mock_period_res = MagicMock()
         mock_period_res.json.return_value = {
             'data': [
-                {'scheduledarrival': 28800, 'date': '2026-03-16T00:00:00Z'} # 08:00
+                {'scheduledarrival': 28800, 'date': '2026-03-16T00:00:00Z', 'stopid': '2752', 'id': '44_1_1:01'} # 08:00
             ]
         }
         

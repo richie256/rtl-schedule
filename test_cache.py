@@ -37,10 +37,10 @@ def test_cache_logic(scraper):
         mock_period_res = MagicMock()
         mock_period_res.json.return_value = {
             'data': [
-                {'scheduledarrival': 8 * 3600, 'date': '2026-03-16T00:00:00Z'},
-                {'scheduledarrival': 8 * 3600, 'date': '2026-03-17T00:00:00Z'},
-                {'scheduledarrival': 9 * 3600, 'date': '2026-03-21T00:00:00Z'},
-                {'scheduledarrival': 10 * 3600, 'date': '2026-03-22T00:00:00Z'}
+                {'scheduledarrival': 8 * 3600, 'date': '2026-03-16T00:00:00Z', 'stopid': '2752', 'id': '44_1_1:01'},
+                {'scheduledarrival': 8 * 3600, 'date': '2026-03-17T00:00:00Z', 'stopid': '2752', 'id': '44_1_1:02'},
+                {'scheduledarrival': 9 * 3600, 'date': '2026-03-21T00:00:00Z', 'stopid': '2752', 'id': '44_1_1:03'},
+                {'scheduledarrival': 10 * 3600, 'date': '2026-03-22T00:00:00Z', 'stopid': '2752', 'id': '44_1_1:04'}
             ]
         }
         
