@@ -19,6 +19,7 @@ TRANSLATIONS = {
         "no_more_buses": "No more buses for today.",
         "refresh_action_received": "Refresh action received",
         "refresh_period_ended": "Refresh period ended",
+        "hass_status_received": "Home Assistant status change received",
         "waiting_for": "Waiting for {interval} seconds...",
     },
     "fr": {
@@ -29,6 +30,7 @@ TRANSLATIONS = {
         "no_more_buses": "Plus de bus pour aujourd'hui.",
         "refresh_action_received": "Action de rafraîchissement reçue",
         "refresh_period_ended": "Période de rafraîchissement terminée",
+        "hass_status_received": "Changement de statut Home Assistant reçu",
         "waiting_for": "Attente de {interval} secondes...",
     }
 }

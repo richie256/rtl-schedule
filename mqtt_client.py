@@ -129,13 +129,21 @@ def start_mqtt_client():
     client = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2, protocol=mqtt.MQTTv5)
 
     def on_message(client, userdata, msg):
-        nonlocal is_refresh_active, refresh_end_time
+        nonlocal is_refresh_active, refresh_end_time, last_discovery_publish
         _LOGGER.info(f"Received message on topic {msg.topic}")
         if msg.topic == config.mqtt_refresh_topic:
             _LOGGER.info(t["refresh_action_received"])
             is_refresh_active = True
             refresh_end_time = datetime.datetime.now() + datetime.timedelta(minutes=10)
             publish_schedule(client, rtl_data, stop_id)
+        elif msg.topic == config.mqtt_hass_status_topic:
+            _LOGGER.info(t["hass_status_received"])
+            is_refresh_active = True
+            refresh_end_time = datetime.datetime.now() + datetime.timedelta(minutes=10)
+            publish_schedule(client, rtl_data, stop_id)
+            if config.hass_discovery_enabled:
+                publish_hass_discovery_config(client, config.stop_code, config.hass_discovery_prefix)
+                last_discovery_publish = time.time()
 
     client.on_message = on_message
 
@@ -147,6 +155,7 @@ def start_mqtt_client():
 
     client.connect(config.mqtt_host, config.mqtt_port)
     client.subscribe(config.mqtt_refresh_topic)
+    client.subscribe(config.mqtt_hass_status_topic)
     client.loop_start()
 
     stop_id = rtl_data.get_stop_id(config.stop_code)

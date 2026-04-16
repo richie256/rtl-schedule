@@ -45,6 +45,7 @@ class Config:
         # MQTT Topics
         self.mqtt_refresh_topic = os.environ.get("MQTT_REFRESH_TOPIC", "rtl/schedule/refresh")
         self.mqtt_state_topic = os.environ.get("MQTT_STATE_TOPIC", f"home/transit/bus/stop_{self.stop_code}" if self.stop_code else "home/transit/bus/stop_unknown")
+        self.mqtt_hass_status_topic = os.environ.get("MQTT_HASS_STATUS_TOPIC", f"{self.hass_discovery_prefix}/status")
 
     def to_dict(self) -> Dict[str, Any]:
         return {k: v for k, v in self.__dict__.items() if not k.startswith('_')}
