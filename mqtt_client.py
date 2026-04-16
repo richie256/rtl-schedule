@@ -163,14 +163,12 @@ def start_mqtt_client():
         _LOGGER.error(f"Stop code {config.stop_code} not found.")
         return
 
+    if config.hass_discovery_enabled:
+        publish_hass_discovery_config(client, config.stop_code, config.hass_discovery_prefix)
+        last_discovery_publish = time.time()
+
     try:
         while True:
-            # Re-publish discovery config every 12 hours
-            current_time = time.time()
-            if config.hass_discovery_enabled and (current_time - last_discovery_publish >= 12 * 3600):
-                publish_hass_discovery_config(client, config.stop_code, config.hass_discovery_prefix)
-                last_discovery_publish = current_time
-
             if is_refresh_active:
                 if datetime.datetime.now() >= refresh_end_time:
                     is_refresh_active = False
