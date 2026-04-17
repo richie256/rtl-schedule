@@ -147,7 +147,7 @@ When the primary GTFS data is unavailable or outdated, the application automatic
 To run the unit tests, execute the following command:
 
 ```bash
-python -m pytest
+python3 -m pytest tests/
 ```
 
 ## Tagging and Release
@@ -175,19 +175,19 @@ Pushing a new tag will trigger the GitHub Actions workflow to build and publish 
 
 ## Local Development
 
-If you want to run the application without Docker, you can install the dependencies from `requirements.txt` and run the application directly in the desired mode.
+If you want to run the application without Docker, you can install the project in editable mode and run the application directly.
 
-**Install dependencies:**
+**Install the project:**
 
 ```bash
-pip install -r requirements.txt
+pip install -e .
 ```
 
 **Run in HTTP mode:**
 
 ```bash
 export MODE=http
-python app.py
+rtl-schedule
 ```
 
 **Run in MQTT mode:**
@@ -196,7 +196,7 @@ python app.py
 export MODE=mqtt
 export STOP_CODE=your_stop_code
 export MQTT_HOST=your_mqtt_broker_host
-python app.py
+rtl-schedule
 ```
 
 ## Codecov Configuration
