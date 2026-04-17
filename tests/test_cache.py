@@ -15,7 +15,6 @@ def scraper():
         return scraper
 
 def test_cache_logic(scraper):
-    stop_code = "32752"
     test_pattern = {
         'stop': '2752',
         'pattern': '44_1_1',
@@ -28,9 +27,6 @@ def test_cache_logic(scraper):
     scraper.get_stop_patterns = MagicMock(return_value=[test_pattern])
     
     # Mock _get_times_from_cache to return some times
-    t1 = datetime.datetime(2026, 3, 16, 8, 0)
-    t2 = datetime.datetime(2026, 3, 17, 8, 0)
-    
     with patch.object(scraper, 'session') as mock_session:
         # Mock landing page response
         mock_landing_res = MagicMock()

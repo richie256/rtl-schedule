@@ -4,6 +4,7 @@ import os
 from unittest.mock import patch
 
 import pytest
+from freezegun import freeze_time
 
 from rtl_schedule.util import get_modification_date, is_file_expired, settings_from_file
 
@@ -20,9 +21,6 @@ def test_get_modification_date(mock_getmtime):
     mock_getmtime.return_value = 1678886400  # March 15, 2023 12:00:00 PM
     expected_date = datetime.datetime.fromtimestamp(1678886400)
     assert get_modification_date("any_file.txt") == expected_date
-
-from freezegun import freeze_time
-
 
 @freeze_time("2023-03-15 13:00:00")
 def test_is_file_expired(mocker):

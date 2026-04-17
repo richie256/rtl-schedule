@@ -150,7 +150,7 @@ def test_publish_schedule_no_bus(mock_cfg_inst):
     mock_rtl_data = MagicMock()
     mock_rtl_data.get_next_stop.return_value = None
     
-    with patch('rtl_schedule.mqtt_client._LOGGER') as mock_logger:
+    with patch('rtl_schedule.mqtt_client._LOGGER'):
         publish_schedule(mock_client, mock_rtl_data, "stop_id")
         mock_client.publish.assert_not_called()
 

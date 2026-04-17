@@ -89,7 +89,8 @@ class HastusScraper:
             for key_str, data in raw_cache.items():
                 # Key format: "stop|pattern|week_start"
                 parts = key_str.split('|')
-                if len(parts) != 3: continue
+                if len(parts) != 3:
+                    continue
                 stop, pattern, week_start_str = parts
                 week_start = datetime.date.fromisoformat(week_start_str)
                 key = (stop, pattern, week_start)
@@ -131,7 +132,8 @@ class HastusScraper:
             content = response.text
             self.stop_mappings = {}
             for entry in content.split(';'):
-                if not entry: continue
+                if not entry:
+                    continue
                 parts = entry.split(',')
                 if len(parts) >= 6:
                     internal_id = parts[0]
@@ -282,7 +284,7 @@ class HastusScraper:
 
             # Deduplicate and sort
             for cat in combined_weekly_data:
-                combined_weekly_data[cat] = sorted(list(set(combined_weekly_data[cat])))
+                combined_weekly_data[cat] = sorted(set(combined_weekly_data[cat]))
 
             self.schedule_cache[cache_key] = combined_weekly_data
             self._save_cache()
@@ -309,7 +311,8 @@ class HastusScraper:
                 continue
 
             arrival_seconds = entry.get('scheduledarrival')
-            if arrival_seconds is None: continue
+            if arrival_seconds is None:
+                continue
 
             # Convert seconds since midnight to time
             try:
@@ -346,7 +349,7 @@ class HastusScraper:
 
         # Deduplicate and sort
         for cat in weekly_data:
-            weekly_data[cat] = sorted(list(set(weekly_data[cat])))
+            weekly_data[cat] = sorted(set(weekly_data[cat]))
 
         return weekly_data
 
@@ -377,7 +380,8 @@ class HastusScraper:
         
         for table in tables:
             header_row = table.find('tr')
-            if not header_row: continue
+            if not header_row:
+                continue
             
             # Categories are often in <b>Semaine</b>, <b>Samedi</b>, etc.
             category_cells = table.find_all('b')
@@ -410,7 +414,7 @@ class HastusScraper:
         
         # Deduplicate and sort
         for cat in weekly_data:
-            weekly_data[cat] = sorted(list(set(weekly_data[cat])))
+            weekly_data[cat] = sorted(set(weekly_data[cat]))
 
         return weekly_data
 
