@@ -1,9 +1,5 @@
-import pytest
-from unittest.mock import patch, MagicMock
-import datetime
-import time
-from paho.mqtt.client import CallbackAPIVersion
-import mqtt_client
+from unittest.mock import MagicMock, patch
+
 
 class MockConfig:
     def __init__(self):
@@ -27,12 +23,12 @@ class MockConfig:
     def to_dict(self):
         return {}
 
-@patch('mqtt_client.config')
-@patch('mqtt_client.mqtt.Client')
-@patch('mqtt_client.ParseRTLData')
-@patch('mqtt_client.publish_schedule')
-@patch('mqtt_client.publish_hass_discovery_config')
-@patch('mqtt_client.time.sleep', side_effect=KeyboardInterrupt)
+@patch('rtl_schedule.mqtt_client.config')
+@patch('rtl_schedule.mqtt_client.mqtt.Client')
+@patch('rtl_schedule.mqtt_client.ParseRTLData')
+@patch('rtl_schedule.mqtt_client.publish_schedule')
+@patch('rtl_schedule.mqtt_client.publish_hass_discovery_config')
+@patch('rtl_schedule.mqtt_client.time.sleep', side_effect=KeyboardInterrupt)
 def test_on_message_hass_status(mock_sleep, mock_publish_discovery, mock_publish_schedule, mock_rtl_parser, mock_mqtt_client, mock_cfg):
     # Setup mock config
     cfg = MockConfig()
@@ -50,7 +46,7 @@ def test_on_message_hass_status(mock_sleep, mock_publish_discovery, mock_publish
     client_inst = mock_mqtt_client.return_value
     
     # Run start_mqtt_client in a way that we can trigger the callback
-    from mqtt_client import start_mqtt_client
+    from rtl_schedule.mqtt_client import start_mqtt_client
     
     # We need to reach the point where on_message is assigned
     # but we can't easily run the loop. 
@@ -63,7 +59,7 @@ def test_on_message_hass_status(mock_sleep, mock_publish_discovery, mock_publish
     client_inst.on_message = None # This is a property in real paho, but here it's a mock
 
     # Re-mock start_mqtt_client's use of client
-    with patch('mqtt_client.mqtt.Client') as mock_mqtt_client:
+    with patch('rtl_schedule.mqtt_client.mqtt.Client') as mock_mqtt_client:
         client_inst = mock_mqtt_client.return_value
         
         # We need to simulate the execution of start_mqtt_client up to loop_start

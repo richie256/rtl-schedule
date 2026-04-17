@@ -1,13 +1,11 @@
+import datetime
 import json
 import os
-from typing import Optional
 
-from const import _LOGGER
-
-import datetime
+from rtl_schedule.const import _LOGGER
 
 
-def settings_from_file(filename: str, config: dict = None) -> Optional[str]:
+def settings_from_file(filename: str, config: dict = None) -> str | None:
     """Reads/writes json from/to a filename."""
     if config:
         # We're writing configuration
@@ -15,16 +13,16 @@ def settings_from_file(filename: str, config: dict = None) -> Optional[str]:
             with open(filename, "w") as fdesc:
                 fdesc.write(json.dumps(config))
                 return True
-        except IOError as error:
+        except OSError as error:
             _LOGGER.exception(error)
             return False
     else:
         # We're reading config
         if os.path.isfile(filename):
             try:
-                with open(filename, "r") as fdesc:
+                with open(filename) as fdesc:
                     return json.loads(fdesc.read())
-            except IOError as error:
+            except OSError as error:
                 _LOGGER.exception(error)
                 return False
         else:

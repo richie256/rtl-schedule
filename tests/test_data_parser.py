@@ -1,12 +1,14 @@
-import pytest
-from unittest.mock import patch, MagicMock
-import os
 import datetime
-import pandas as pd
+import os
+from unittest.mock import MagicMock, patch
 from zipfile import ZipFile
 
-from data_parser import ParseRTLData
-from const import RTL_GTFS_ZIP_FILE, TARGET_DIRECTION
+import pandas as pd
+import pytest
+
+from rtl_schedule.const import RTL_GTFS_ZIP_FILE, TARGET_DIRECTION
+from rtl_schedule.data_parser import ParseRTLData
+
 
 @pytest.fixture
 def gtfs_zip_file():
@@ -30,9 +32,9 @@ def gtfs_zip_file():
     if os.path.exists(RTL_GTFS_ZIP_FILE):
         os.remove(RTL_GTFS_ZIP_FILE)
 
-@patch('data_parser.RETRIEVAL_METHOD', 'gtfs')
-@patch('data_parser.HastusScraper')
-@patch('data_parser.is_file_expired', return_value=False)
+@patch('rtl_schedule.data_parser.RETRIEVAL_METHOD', 'gtfs')
+@patch('rtl_schedule.data_parser.HastusScraper')
+@patch('rtl_schedule.data_parser.is_file_expired', return_value=False)
 def test_get_next_stop_lookahead(mock_is_file_expired, mock_hastus_scraper, gtfs_zip_file):
     parser = ParseRTLData()
     
@@ -51,9 +53,9 @@ def test_get_next_stop_lookahead(mock_is_file_expired, mock_hastus_scraper, gtfs
     assert next_stop.arrival_datetime.date() == datetime.date(2025, 9, 30)
     assert next_stop.retrieve_method == 'GTFS'
 
-@patch('data_parser.RETRIEVAL_METHOD', 'gtfs')
-@patch('data_parser.HastusScraper')
-@patch('data_parser.is_file_expired', return_value=False)
+@patch('rtl_schedule.data_parser.RETRIEVAL_METHOD', 'gtfs')
+@patch('rtl_schedule.data_parser.HastusScraper')
+@patch('rtl_schedule.data_parser.is_file_expired', return_value=False)
 def test_get_next_stop(mock_is_file_expired, mock_hastus_scraper, gtfs_zip_file):
     parser = ParseRTLData()
     # Monday at 09:00 AM
@@ -64,12 +66,12 @@ def test_get_next_stop(mock_is_file_expired, mock_hastus_scraper, gtfs_zip_file)
     assert next_stop.arrival_time == '10:00:00'
     assert next_stop.retrieve_method == 'GTFS'
 
-@patch('data_parser.RETRIEVAL_METHOD', 'live')
-@patch('data_parser.HastusScraper')
-@patch('data_parser.is_file_expired', return_value=False)
+@patch('rtl_schedule.data_parser.RETRIEVAL_METHOD', 'live')
+@patch('rtl_schedule.data_parser.HastusScraper')
+@patch('rtl_schedule.data_parser.is_file_expired', return_value=False)
 @patch('os.path.isfile', return_value=True)
-@patch('data_parser.read_csv')
-@patch('zipfile.ZipFile')
+@patch('rtl_schedule.data_parser.read_csv')
+@patch('rtl_schedule.data_parser.zipfile.ZipFile')
 def test_get_next_stop_live_mode(mock_zipfile, mock_read_csv, mock_isfile, mock_is_file_expired, mock_hastus_scraper):
     """Verifies that in 'live' mode, it uses HastusScraper and skips GTFS."""
     # Mock dataframes to avoid initialization errors
@@ -96,20 +98,20 @@ def test_get_next_stop_live_mode(mock_zipfile, mock_read_csv, mock_isfile, mock_
 
 def test_load_data_file_not_found(mocker):
     mocker.patch('os.path.isfile', return_value=False)
-    mocker.patch('data_parser.is_file_expired', return_value=False)
-    mocker.patch('data_parser.ParseRTLData._download_gtfs_file', side_effect=FileNotFoundError)
+    mocker.patch('rtl_schedule.data_parser.is_file_expired', return_value=False)
+    mocker.patch('rtl_schedule.data_parser.ParseRTLData._download_gtfs_file', side_effect=FileNotFoundError)
     with pytest.raises(FileNotFoundError):
         ParseRTLData()
 
 def test_load_data_bad_zip(mocker):
     mocker.patch('os.path.isfile', return_value=True)
-    mocker.patch('data_parser.is_file_expired', return_value=False)
+    mocker.patch('rtl_schedule.data_parser.is_file_expired', return_value=False)
     from zipfile import BadZipFile
-    mocker.patch('zipfile.ZipFile', side_effect=BadZipFile)
+    mocker.patch('rtl_schedule.data_parser.zipfile.ZipFile', side_effect=BadZipFile)
     with pytest.raises(BadZipFile):
         ParseRTLData()
 
-@patch('data_parser.requests.get')
+@patch('rtl_schedule.data_parser.requests.get')
 def test_download_gtfs_file(mock_get, mocker):
     mock_res = MagicMock()
     mock_res.content = b'fake zip content'
@@ -119,12 +121,12 @@ def test_download_gtfs_file(mock_get, mocker):
     ParseRTLData._download_gtfs_file('fake_path.zip')
     mock_get.assert_called_once()
 
-@patch('data_parser.is_file_expired', return_value=False)
+@patch('rtl_schedule.data_parser.is_file_expired', return_value=False)
 def test_get_stop_id_not_found(mock_is_file_expired, gtfs_zip_file):
     parser = ParseRTLData()
     assert parser.get_stop_id(999) is None
 
-@patch('data_parser.is_file_expired', return_value=False)
+@patch('rtl_schedule.data_parser.is_file_expired', return_value=False)
 def test_get_service_id_with_exceptions(mock_is_file_expired, mocker):
     # Setup GTFS with calendar_dates.txt
     with ZipFile(RTL_GTFS_ZIP_FILE, 'w') as zf:
@@ -142,7 +144,7 @@ def test_get_service_id_with_exceptions(mock_is_file_expired, mocker):
     if os.path.exists(RTL_GTFS_ZIP_FILE):
         os.remove(RTL_GTFS_ZIP_FILE)
 
-@patch('data_parser.is_file_expired', return_value=False)
+@patch('rtl_schedule.data_parser.is_file_expired', return_value=False)
 def test_calculate_arrival_datetimes_midnight(mock_is_file_expired, gtfs_zip_file):
     parser = ParseRTLData()
     df = pd.DataFrame({
@@ -156,7 +158,7 @@ def test_calculate_arrival_datetimes_midnight(mock_is_file_expired, gtfs_zip_fil
     # 24:15:00 becomes 00:15:00 next day (tomorrow)
     assert result.iloc[1]['arrival_datetime'] == datetime.datetime(2025, 9, 30, 0, 15, 0)
 
-@patch('data_parser.is_file_expired', return_value=False)
+@patch('rtl_schedule.data_parser.is_file_expired', return_value=False)
 def test_get_stop_date_range(mock_is_file_expired, gtfs_zip_file):
     parser = ParseRTLData()
     min_d, max_d = parser._get_stop_date_range(1)

@@ -1,15 +1,17 @@
+import datetime
+import json
+import logging
+import os
+import re
+from typing import Any
+
 import requests
+from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from urllib3.poolmanager import PoolManager
 from urllib3.util.retry import Retry
-import datetime
-import logging
-from typing import Optional, List, Dict, Any
-from bs4 import BeautifulSoup
-import re
-import json
-import os
-from const import TARGET_DIRECTION
+
+from rtl_schedule.const import TARGET_DIRECTION
 
 _LOGGER = logging.getLogger("rtl-schedule")
 
@@ -80,7 +82,7 @@ class HastusScraper:
             return
         
         try:
-            with open(self.CACHE_FILE, 'r') as f:
+            with open(self.CACHE_FILE) as f:
                 raw_cache = json.load(f)
                 
             self.schedule_cache = {}
@@ -145,7 +147,7 @@ class HastusScraper:
         except Exception as e:
             _LOGGER.error(f"Unexpected error while fetching stop mappings: {e}")
 
-    def get_stop_code_from_id(self, stop_id: int) -> Optional[str]:
+    def get_stop_code_from_id(self, stop_id: int) -> str | None:
         """Find the public stop code for a given internal stop_id."""
         if not self._mappings_fetched:
             self.fetch_stop_mappings()
@@ -157,7 +159,7 @@ class HastusScraper:
                     return code
         return None
 
-    def get_stop_patterns(self, stop_code: str, stop_id: Optional[int] = None) -> List[Dict]:
+    def get_stop_patterns(self, stop_code: str, stop_id: int | None = None) -> list[dict]:
         """Fetch available patterns/routes for a given stop code."""
         if not self._mappings_fetched:
             self.fetch_stop_mappings()
@@ -193,7 +195,7 @@ class HastusScraper:
         unique_patterns = {p['pattern']: p for p in patterns}.values()
         return list(unique_patterns)
 
-    def _parse_patterns_html(self, html: str) -> List[Dict]:
+    def _parse_patterns_html(self, html: str) -> list[dict]:
         """Parse the HTML from stops_patterns to extract urlHoraireArret parameters."""
         patterns = []
         # Support both single and double quotes, and optional spaces
@@ -213,7 +215,7 @@ class HastusScraper:
                 })
         return patterns
 
-    def get_schedule_by_params(self, params: Dict, date: datetime.date) -> List[datetime.datetime]:
+    def get_schedule_by_params(self, params: dict, date: datetime.date) -> list[datetime.datetime]:
         """Fetch schedule using parameters derived from urlHoraireArret with caching."""
         if not self.buildtime:
             self._initialize()
@@ -293,7 +295,7 @@ class HastusScraper:
             _LOGGER.error(traceback.format_exc())
             return []
 
-    def _parse_json_weekly_schedule(self, json_data: Dict, stop_id: str, pattern_id: str, target_date: datetime.date) -> Dict[str, List[datetime.time]]:
+    def _parse_json_weekly_schedule(self, json_data: dict, stop_id: str, pattern_id: str, target_date: datetime.date) -> dict[str, list[datetime.time]]:
         """Parse the new JSON format into weekly categories, filtering by stop and pattern."""
         weekly_data = {'semaine': [], 'samedi': [], 'dimanche': []}
 
@@ -348,7 +350,7 @@ class HastusScraper:
 
         return weekly_data
 
-    def _get_times_from_cache(self, weekly_data: Dict[str, List[datetime.time]], date: datetime.date) -> List[datetime.datetime]:
+    def _get_times_from_cache(self, weekly_data: dict[str, list[datetime.time]], date: datetime.date) -> list[datetime.datetime]:
         """Helper to convert cached time list to datetime list for a specific date."""
         weekday = date.weekday()
         
@@ -365,7 +367,7 @@ class HastusScraper:
             
         return sorted(result)
 
-    def _parse_html_weekly_schedule(self, html: str) -> Dict[str, List[datetime.time]]:
+    def _parse_html_weekly_schedule(self, html: str) -> dict[str, list[datetime.time]]:
         """Parse the weekly HTML table into three categories: semaine, samedi, dimanche."""
         soup = BeautifulSoup(html, 'html.parser')
         weekly_data = {'semaine': [], 'samedi': [], 'dimanche': []}
@@ -412,7 +414,7 @@ class HastusScraper:
 
         return weekly_data
 
-    def get_schedule(self, stop_id: int, date: datetime.date, feed_id: int = 15) -> List[Dict[str, Any]]:
+    def get_schedule(self, stop_id: int, date: datetime.date, feed_id: int = 15) -> list[dict[str, Any]]:
         """Smart fallback: discovers patterns for the stop and fetches all schedules."""
         stop_code = self.get_stop_code_from_id(stop_id)
         if not stop_code:

@@ -1,12 +1,15 @@
 import datetime
-import pytest
 from unittest.mock import MagicMock, patch
-from hastus_scraper import HastusScraper
+
+import pytest
+
+from rtl_schedule.hastus_scraper import HastusScraper
+
 
 @pytest.fixture
 def scraper():
-    with patch('hastus_scraper.HastusScraper._initialize'), \
-         patch('hastus_scraper.HastusScraper._load_cache'):
+    with patch('rtl_schedule.hastus_scraper.HastusScraper._initialize'), \
+         patch('rtl_schedule.hastus_scraper.HastusScraper._load_cache'):
         scraper = HastusScraper()
         scraper.buildtime = "20260408"
         return scraper

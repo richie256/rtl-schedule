@@ -1,10 +1,13 @@
 
 import datetime
-import pytest
 import json
-from unittest.mock import patch, MagicMock
-from hastus_scraper import HastusScraper
-from const import TARGET_DIRECTION
+from unittest.mock import MagicMock
+
+import pytest
+
+from rtl_schedule.const import TARGET_DIRECTION
+from rtl_schedule.hastus_scraper import HastusScraper
+
 
 @pytest.fixture
 def scraper(mocker):

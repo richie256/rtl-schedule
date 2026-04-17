@@ -1,8 +1,11 @@
-import pytest
 import datetime
-from unittest.mock import MagicMock, patch
-from http_server import create_app
+from unittest.mock import MagicMock
+
+import pytest
 from freezegun import freeze_time
+
+from rtl_schedule.http_server import create_app
+
 
 @pytest.fixture
 def mock_rtl_data():

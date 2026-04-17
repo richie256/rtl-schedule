@@ -1,15 +1,22 @@
 import datetime
 import os
 import zipfile
-from typing import Optional
 
-import requests
-from pandas import read_csv, to_datetime, Series, errors
 import pandas
+import requests
+from pandas import Series, read_csv
 
-from const import _LOGGER, RTL_GTFS_URL, RTL_GTFS_ZIP_FILE, RETRIEVAL_METHOD, TARGET_DIRECTION
-from util import is_file_expired
-from hastus_scraper import HastusScraper
+from rtl_schedule.config import config
+from rtl_schedule.const import (
+    _LOGGER,
+    RETRIEVAL_METHOD,
+    RTL_GTFS_URL,
+    RTL_GTFS_ZIP_FILE,
+    TARGET_DIRECTION,
+)
+from rtl_schedule.hastus_scraper import HastusScraper
+from rtl_schedule.util import is_file_expired
+
 
 class NoServiceFoundError(ValueError):
     """Exception raised when no service is found for a given date."""
@@ -18,12 +25,13 @@ class NoServiceFoundError(ValueError):
 class ParseRTLData:
     def __init__(self):
         self.schedule_zipfile = RTL_GTFS_ZIP_FILE
-        _LOGGER.info(f"ParseRTLData init")
-        
-        self.data_dir = os.environ.get("GTFS_DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
+        _LOGGER.info("ParseRTLData init")
+
+        self.data_dir = config.gtfs_data_dir
         self.file_path = os.path.join(self.data_dir, self.schedule_zipfile)
         self.scraper = HastusScraper()
         self._load_data()
+
 
     def _load_data(self, force_download=False):
         """Download and load GTFS data into memory."""
@@ -184,7 +192,7 @@ class ParseRTLData:
         
         return min_date, max_date
 
-    def get_next_stop(self, stop_id: int, parm_datetime: datetime.datetime, stop_code: Optional[int] = None, is_lookahead: bool = False) -> Optional[Series]:
+    def get_next_stop(self, stop_id: int, parm_datetime: datetime.datetime, stop_code: int | None = None, is_lookahead: bool = False) -> Series | None:
         """Retrieve the next stop information, optionally looking ahead to the next day."""
         self.refresh()
 
@@ -225,7 +233,7 @@ class ParseRTLData:
             except NoServiceFoundError as e:
                 _LOGGER.info(f"GTFS check failed for {parm_datetime.date()}: {e}. Trying live scraper fallback...")
         else:
-            _LOGGER.info(f"Skipping GTFS check as RETRIEVAL_METHOD is 'live'")
+            _LOGGER.info("Skipping GTFS check as RETRIEVAL_METHOD is 'live'")
 
         # Fallback to Hastus Scraper
         live_arrivals = self.scraper.get_schedule(stop_id, parm_datetime.date())

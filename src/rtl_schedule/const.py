@@ -1,5 +1,6 @@
 import logging
-from config import config
+
+from rtl_schedule.config import config
 
 _LOGGER = logging.getLogger("rtl-schedule")
 

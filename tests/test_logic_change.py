@@ -6,8 +6,8 @@ import os
 # Mock environment variable for the test
 os.environ["RETRIEVAL_METHOD"] = "live"
 
-from data_parser import ParseRTLData
-from const import RETRIEVAL_METHOD
+from rtl_schedule.const import RETRIEVAL_METHOD
+from rtl_schedule.data_parser import ParseRTLData
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("rtl-schedule")

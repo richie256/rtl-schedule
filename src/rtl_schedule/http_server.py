@@ -4,8 +4,9 @@ import logging
 
 from flask import Flask, jsonify, request
 
-from const import _LOGGER
-import data_parser
+import rtl_schedule.data_parser as data_parser
+from rtl_schedule.const import _LOGGER
+
 
 def create_app(rtl_data=None):
     if rtl_data is None:
