@@ -10,9 +10,6 @@ from transit_schedule.config import config
 from transit_schedule.const import (
     _LOGGER,
     GTFS_URL,
-    GTFS_ZIP_FILE,
-    RETRIEVAL_METHOD,
-    TARGET_DIRECTION,
 )
 from transit_schedule.hastus_scraper import HastusScraper
 from transit_schedule.util import is_file_expired

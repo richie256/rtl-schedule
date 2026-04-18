@@ -1,10 +1,11 @@
-import os
 import datetime
-import pytest
-from transit_schedule.data_parser import ParseTransitData
-from transit_schedule.config import config
-
+import os
 from unittest.mock import patch
+
+import pytest
+
+from transit_schedule.data_parser import ParseTransitData
+
 
 # Helper to check if real GTFS data is available
 def has_gtfs_data(transit):
