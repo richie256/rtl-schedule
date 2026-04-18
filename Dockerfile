@@ -4,17 +4,13 @@ RUN apt-get update && apt-get install -y curl procps && rm -rf /var/lib/apt/list
 
 WORKDIR /app
 
-# Install project dependencies
-COPY pyproject.toml .
-# We need to copy README.md as well if it's referenced in pyproject.toml
-COPY README.md .
-# Create a dummy src/transit_schedule/__init__.py to allow pip to install dependencies
-RUN mkdir -p src/transit_schedule && touch src/transit_schedule/__init__.py
-RUN pip install --no-cache-dir .
+# Copy packaging files
+COPY pyproject.toml README.md ./
 
-# Copy the rest of the source code
-COPY . .
-# Re-install the project to include all source files
+# Copy source code first to allow pip install . to work
+COPY src/ ./src/
+
+# Install the project and its dependencies
 RUN pip install --no-cache-dir .
 
 RUN mkdir -p /data
