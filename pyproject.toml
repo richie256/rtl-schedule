@@ -4,15 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "transit-schedule"
-version = "5.0.5"
+version = "5.0.6"
 description = "Multi-transit Bus Schedule HTTP and MQTT provider"
 readme = "README.md"
 requires-python = ">=3.12"
-
-[project.urls]
-Homepage = "https://github.com/richie256/transit-schedule"
-Repository = "https://github.com/richie256/transit-schedule"
-
 dependencies = [
     "paho-mqtt",
     "requests",
@@ -23,6 +18,10 @@ dependencies = [
     "beautifulsoup4",
     "pip-system-certs",
 ]
+
+[project.urls]
+Homepage = "https://github.com/richie256/transit-schedule"
+Repository = "https://github.com/richie256/transit-schedule"
 
 [project.optional-dependencies]
 dev = [
