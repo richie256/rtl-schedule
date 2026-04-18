@@ -3,13 +3,13 @@ from unittest.mock import patch
 
 import pytest
 
-from rtl_schedule.hastus_scraper import HastusScraper
+from transit_schedule.hastus_scraper import HastusScraper
 
 
 @pytest.fixture
 def scraper():
-    with patch('rtl_schedule.hastus_scraper.HastusScraper._initialize'), \
-         patch('rtl_schedule.hastus_scraper.HastusScraper._load_cache'):
+    with patch('transit_schedule.hastus_scraper.HastusScraper._initialize'), \
+         patch('transit_schedule.hastus_scraper.HastusScraper._load_cache'):
         scraper = HastusScraper()
         return scraper
 
@@ -28,8 +28,8 @@ def test_get_schedule_fallback(scraper):
         ]
         mock_get_schedule.return_value = [datetime.datetime(2026, 3, 16, 8, 0)]
         
-        # We need to mock TARGET_DIRECTION from rtl_schedule.const as well
-        with patch('rtl_schedule.hastus_scraper.TARGET_DIRECTION', 'Terminus Panama'):
+        # We need to mock TARGET_DIRECTION from transit_schedule.const as well
+        with patch('transit_schedule.hastus_scraper.TARGET_DIRECTION', 'Terminus Panama'):
             arrivals = scraper.get_schedule(stop_id, today)
             
             assert len(arrivals) == 1

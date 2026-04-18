@@ -11,9 +11,9 @@ from requests.adapters import HTTPAdapter
 from urllib3.poolmanager import PoolManager
 from urllib3.util.retry import Retry
 
-from rtl_schedule.const import TARGET_DIRECTION
+from transit_schedule.const import TARGET_DIRECTION, TRANSIT
 
-_LOGGER = logging.getLogger("rtl-schedule")
+_LOGGER = logging.getLogger("transit-schedule")
 
 class HostnameIgnoreAdapter(HTTPAdapter):
     """
@@ -420,6 +420,10 @@ class HastusScraper:
 
     def get_schedule(self, stop_id: int, date: datetime.date, feed_id: int = 15) -> list[dict[str, Any]]:
         """Smart fallback: discovers patterns for the stop and fetches all schedules."""
+        if TRANSIT != "RTL":
+            _LOGGER.debug(f"Live scraper not available for {TRANSIT}")
+            return []
+            
         stop_code = self.get_stop_code_from_id(stop_id)
         if not stop_code:
             _LOGGER.error(f"Could not map internal stop_id {stop_id} to a stop code.")

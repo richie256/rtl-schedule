@@ -3,13 +3,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from rtl_schedule.hastus_scraper import HastusScraper
+from transit_schedule.hastus_scraper import HastusScraper
 
 
 @pytest.fixture
 def scraper():
-    with patch('rtl_schedule.hastus_scraper.HastusScraper._initialize'), \
-         patch('rtl_schedule.hastus_scraper.HastusScraper._load_cache'):
+    with patch('transit_schedule.hastus_scraper.HastusScraper._initialize'), \
+         patch('transit_schedule.hastus_scraper.HastusScraper._load_cache'):
         scraper = HastusScraper()
         scraper.buildtime = "20260408"
         return scraper

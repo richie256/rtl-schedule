@@ -2,7 +2,7 @@ import datetime
 import json
 import os
 
-from rtl_schedule.const import _LOGGER
+from transit_schedule.const import _LOGGER
 
 
 def settings_from_file(filename: str, config: dict = None) -> str | None:

@@ -1,13 +1,13 @@
 import os
 
-from rtl_schedule.const import _LOGGER
-from rtl_schedule.http_server import start_http_server
-from rtl_schedule.mqtt_client import start_mqtt_client
+from transit_schedule.const import _LOGGER, TRANSIT
+from transit_schedule.http_server import start_http_server
+from transit_schedule.mqtt_client import start_mqtt_client
 
 
 def main():
     mode = os.environ.get("MODE", "http").lower()
-    _LOGGER.info(f"Starting RTL Schedule in {mode.upper()} mode")
+    _LOGGER.info(f"Starting {TRANSIT} Transit Schedule in {mode.upper()} mode")
 
     if mode == "http":
         start_http_server()

@@ -5,8 +5,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from rtl_schedule.const import TARGET_DIRECTION
-from rtl_schedule.hastus_scraper import HastusScraper
+from transit_schedule.const import TARGET_DIRECTION
+from transit_schedule.hastus_scraper import HastusScraper
 
 
 @pytest.fixture

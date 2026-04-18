@@ -8,9 +8,9 @@ import paho.mqtt.client as mqtt
 from paho.mqtt.client import CallbackAPIVersion
 from pythonjsonlogger import json as jsonlogger
 
-from rtl_schedule.config import config
-from rtl_schedule.const import _LOGGER, DEFAULT_TIMEZONE, TRANSLATIONS
-from rtl_schedule.data_parser import ParseRTLData
+from transit_schedule.config import config
+from transit_schedule.const import _LOGGER, DEFAULT_TIMEZONE, TRANSIT, TRANSLATIONS
+from transit_schedule.data_parser import ParseTransitData
 
 # Configure logging
 logHandler = logging.StreamHandler()
@@ -44,7 +44,7 @@ def is_rush_hour() -> bool:
 
 def publish_hass_discovery_config(client, stop_code, discovery_prefix):
     """Publishes the Home Assistant discovery configuration for the bus stop sensor."""
-    object_id = f"rtl_schedule_{stop_code}"
+    object_id = f"transit_schedule_{stop_code}"
     discovery_topic = f"{discovery_prefix}/sensor/{object_id}/config"
     state_topic = config.mqtt_state_topic
     
@@ -60,19 +60,19 @@ def publish_hass_discovery_config(client, stop_code, discovery_prefix):
         "device_class": "timestamp",
         "json_attributes_template": "{{ {'trip_headsign': value_json.trip_headsign} | tojson }}",
         "device": {
-            "identifiers": ["rtl_schedule"],
-            "name": t["rtl_schedule"],
-            "manufacturer": "RTL"
+            "identifiers": ["transit_schedule"],
+            "name": t["transit_schedule"],
+            "manufacturer": TRANSIT
         }
     }
 
     client.publish(discovery_topic, json.dumps(payload), retain=True)
     _LOGGER.info("Published Home Assistant discovery configuration", extra={"topic": discovery_topic, "payload": payload})
 
-def publish_schedule(client, rtl_data, stop_id):
+def publish_schedule(client, transit_data, stop_id):
     """Fetches and publishes the next bus stop information."""
     current_datetime = datetime.datetime.now().replace(microsecond=0)
-    next_stop_row = rtl_data.get_next_stop(stop_id, current_datetime, stop_code=config.stop_code)
+    next_stop_row = transit_data.get_next_stop(stop_id, current_datetime, stop_code=config.stop_code)
     
     t = get_translation()
 
@@ -113,7 +113,7 @@ def start_mqtt_client():
         return
 
     try:
-        rtl_data = ParseRTLData()
+        transit_data = ParseTransitData()
     except Exception as e:
         _LOGGER.error(f"Failed to initialize: {e}")
         return
@@ -135,12 +135,12 @@ def start_mqtt_client():
             _LOGGER.info(t["refresh_action_received"])
             is_refresh_active = True
             refresh_end_time = datetime.datetime.now() + datetime.timedelta(minutes=10)
-            publish_schedule(client, rtl_data, stop_id)
+            publish_schedule(client, transit_data, stop_id)
         elif msg.topic == config.mqtt_hass_status_topic:
             _LOGGER.info(t["hass_status_received"])
             is_refresh_active = True
             refresh_end_time = datetime.datetime.now() + datetime.timedelta(minutes=10)
-            publish_schedule(client, rtl_data, stop_id)
+            publish_schedule(client, transit_data, stop_id)
             if config.hass_discovery_enabled:
                 publish_hass_discovery_config(client, config.stop_code, config.hass_discovery_prefix)
                 last_discovery_publish = time.time()
@@ -158,7 +158,7 @@ def start_mqtt_client():
     client.subscribe(config.mqtt_hass_status_topic)
     client.loop_start()
 
-    stop_id = rtl_data.get_stop_id(config.stop_code)
+    stop_id = transit_data.get_stop_id(config.stop_code)
     if stop_id is None:
         _LOGGER.error(f"Stop code {config.stop_code} not found.")
         return
@@ -177,7 +177,7 @@ def start_mqtt_client():
             else:
                 interval = 10 if is_rush_hour() else 60
             
-            publish_schedule(client, rtl_data, stop_id)
+            publish_schedule(client, transit_data, stop_id)
             
             # Update heartbeat file for health check
             try:

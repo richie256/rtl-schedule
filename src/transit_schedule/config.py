@@ -3,20 +3,33 @@ import logging
 import os
 from typing import Any
 
-_LOGGER = logging.getLogger("rtl-schedule")
+_LOGGER = logging.getLogger("transit-schedule")
 
 class Config:
     def __init__(self):
+        # Transit Configuration
+        self.transit = os.environ.get("TRANSIT", "RTL").upper()
+        
         # GTFS Configuration
-        self.rtl_gtfs_url = os.environ.get("RTL_GTFS_URL", "http://www.rtl-longueuil.qc.ca/transit/latestfeed/RTL.zip")
-        self.rtl_gtfs_zip_file = os.environ.get("RTL_GTFS_ZIP_FILE", "gtfs.zip")
-        self.gtfs_data_dir = os.environ.get("GTFS_DATA_DIR", ".")
-        self.retrieval_method = os.environ.get("RETRIEVAL_METHOD", "live").lower()
+        default_urls = {
+            "RTL": "http://www.rtl-longueuil.qc.ca/transit/latestfeed/RTL.zip",
+            "STM": "https://www.stm.info/sites/default/files/gtfs/gtfs_stm.zip",
+            "STL": "https://www.stlaval.ca/datas/opendata/GTF_STL.zip"
+        }
+        self.gtfs_url = os.environ.get("GTFS_URL", default_urls.get(self.transit, default_urls["RTL"]))
+        self.gtfs_zip_file = os.environ.get("GTFS_ZIP_FILE", f"gtfs_{self.transit.lower()}.zip")
+        self.gtfs_data_dir = os.environ.get("GTFS_DATA_DIR", "data")
+        self.retrieval_method = os.environ.get("RETRIEVAL_METHOD", "gtfs" if self.transit != "RTL" else "live").lower()
         self.timezone = os.environ.get("TZ", "America/Montreal")
         self.language = os.environ.get("LANGUAGE", "fr").lower()
         
         # Filtering Configuration
-        self.target_direction = os.environ.get("TARGET_DIRECTION", "Direction Terminus Panama")
+        default_directions = {
+            "RTL": "Direction Terminus Panama",
+            "STM": "",
+            "STL": ""
+        }
+        self.target_direction = os.environ.get("TARGET_DIRECTION", default_directions.get(self.transit, ""))
 
         # MQTT Configuration
         self.mqtt_host = os.environ.get("MQTT_HOST")
@@ -43,8 +56,8 @@ class Config:
         self.evening_rush_end = os.environ.get("EVENING_RUSH_END", "18:00")
 
         # MQTT Topics
-        self.mqtt_refresh_topic = os.environ.get("MQTT_REFRESH_TOPIC", "rtl/schedule/refresh")
-        self.mqtt_state_topic = os.environ.get("MQTT_STATE_TOPIC", f"home/transit/bus/stop_{self.stop_code}" if self.stop_code else "home/transit/bus/stop_unknown")
+        self.mqtt_refresh_topic = os.environ.get("MQTT_REFRESH_TOPIC", f"{self.transit.lower()}/schedule/refresh")
+        self.mqtt_state_topic = os.environ.get("MQTT_STATE_TOPIC", f"home/transit/{self.transit.lower()}/stop_{self.stop_code}" if self.stop_code else f"home/transit/{self.transit.lower()}/stop_unknown")
         self.mqtt_hass_status_topic = os.environ.get("MQTT_HASS_STATUS_TOPIC", f"{self.hass_discovery_prefix}/status")
 
     def to_dict(self) -> dict[str, Any]:

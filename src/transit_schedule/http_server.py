@@ -4,13 +4,13 @@ import logging
 
 from flask import Flask, jsonify, request
 
-import rtl_schedule.data_parser as data_parser
-from rtl_schedule.const import _LOGGER
+import transit_schedule.data_parser as data_parser
+from transit_schedule.const import _LOGGER
 
 
-def create_app(rtl_data=None):
-    if rtl_data is None:
-        rtl_data = data_parser.ParseRTLData()
+def create_app(transit_data=None):
+    if transit_data is None:
+        transit_data = data_parser.ParseTransitData()
     app = Flask(__name__)
 
     if __name__ != '__main__':
@@ -26,15 +26,15 @@ def create_app(rtl_data=None):
 
 
 
-    @app.route("/rtl_schedule/nextstop/<int:stop_code>", methods=['GET'])
+    @app.route("/transit-schedule/nextstop/<int:stop_code>", methods=['GET'])
     def get_next_stop(stop_code: int):
         if stop_code <= 0:
             return jsonify({"error": "Stop code must be a positive integer"}), 400
-        stop_id = rtl_data.get_stop_id(stop_code)
+        stop_id = transit_data.get_stop_id(stop_code)
         if stop_id is None:
             return jsonify({"error": "Stop code not found"}), 404
         current_datetime = datetime.datetime.now().replace(microsecond=0)
-        next_stop_row = rtl_data.get_next_stop(stop_id, current_datetime, stop_code=stop_code)
+        next_stop_row = transit_data.get_next_stop(stop_id, current_datetime, stop_code=stop_code)
 
         if next_stop_row is not None:
             difference = next_stop_row.arrival_datetime - current_datetime
@@ -43,7 +43,7 @@ def create_app(rtl_data=None):
             result = {
                 'nextstop_nbrmins': int(nbr_minutes),
                 'nextstop_nbrsecs': int(nbr_seconds),
-                'route_id': int(next_stop_row.route_id),
+                'route_id': str(next_stop_row.route_id),
                 'arrival_time': str(next_stop_row.arrival_time),
                 'trip_headsign': str(next_stop_row.trip_headsign),
                 'current_time': str(current_datetime.time()),

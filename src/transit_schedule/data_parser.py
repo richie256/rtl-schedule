@@ -6,26 +6,26 @@ import pandas
 import requests
 from pandas import Series, read_csv
 
-from rtl_schedule.config import config
-from rtl_schedule.const import (
+from transit_schedule.config import config
+from transit_schedule.const import (
     _LOGGER,
+    GTFS_URL,
+    GTFS_ZIP_FILE,
     RETRIEVAL_METHOD,
-    RTL_GTFS_URL,
-    RTL_GTFS_ZIP_FILE,
     TARGET_DIRECTION,
 )
-from rtl_schedule.hastus_scraper import HastusScraper
-from rtl_schedule.util import is_file_expired
+from transit_schedule.hastus_scraper import HastusScraper
+from transit_schedule.util import is_file_expired
 
 
 class NoServiceFoundError(ValueError):
     """Exception raised when no service is found for a given date."""
     pass
 
-class ParseRTLData:
+class ParseTransitData:
     def __init__(self):
-        self.schedule_zipfile = RTL_GTFS_ZIP_FILE
-        _LOGGER.info("ParseRTLData init")
+        self.schedule_zipfile = config.gtfs_zip_file
+        _LOGGER.info("ParseTransitData init")
 
         self.data_dir = config.gtfs_data_dir
         self.file_path = os.path.join(self.data_dir, self.schedule_zipfile)
@@ -37,15 +37,22 @@ class ParseRTLData:
         """Download and load GTFS data into memory."""
         try:
             if force_download or not (os.path.isfile(self.file_path)) or is_file_expired(self.file_path):
-                _LOGGER.info(f"Downloading a new zip file from [{RTL_GTFS_URL}]")
+                _LOGGER.info(f"Downloading a new zip file from [{GTFS_URL}]")
                 self._download_gtfs_file(self.file_path)
 
             with zipfile.ZipFile(self.file_path) as my_zip:
                 _LOGGER.info(f"Loading GTFS data from {self.file_path} into memory...")
-                self.stops = read_csv(my_zip.open('stops.txt'), index_col='stop_code')
-                self.calendar = read_csv(my_zip.open('calendar.txt'))
-                self.stop_times = read_csv(my_zip.open('stop_times.txt'), index_col='stop_id')
-                self.trips = read_csv(my_zip.open('trips.txt'))
+                self.stops = read_csv(my_zip.open('stops.txt'), dtype={'stop_code': str}, index_col='stop_code')
+                self.calendar = read_csv(my_zip.open('calendar.txt'), dtype={'service_id': str})
+                self.stop_times = read_csv(
+                    my_zip.open('stop_times.txt'),
+                    dtype={'stop_id': str, 'trip_id': str},
+                    index_col='stop_id'
+                )
+                self.trips = read_csv(
+                    my_zip.open('trips.txt'),
+                    dtype={'trip_id': str, 'service_id': str, 'route_id': str}
+                )
                 
                 # Calculate global schedule range for diagnostics
                 self.min_date = self.calendar['start_date'].min()
@@ -56,7 +63,7 @@ class ParseRTLData:
                 
                 # Load calendar_dates if it exists (it's optional in GTFS but common in RTL)
                 try:
-                    self.calendar_dates = read_csv(my_zip.open('calendar_dates.txt'))
+                    self.calendar_dates = read_csv(my_zip.open('calendar_dates.txt'), dtype={'service_id': str})
                     _LOGGER.info(f"Loaded calendar_dates.txt ({len(self.calendar_dates)} entries)")
                 except KeyError:
                     self.calendar_dates = pandas.DataFrame(columns=['service_id', 'date', 'exception_type'])
@@ -78,32 +85,37 @@ class ParseRTLData:
     @staticmethod
     def _download_gtfs_file(zipfile_location) -> None:
         """ Download the GTFS file from the website, write it on disk. """
-        my_file = requests.get(RTL_GTFS_URL, allow_redirects=True, timeout=60)
+        my_file = requests.get(GTFS_URL, allow_redirects=True, timeout=60)
         my_file.raise_for_status()
         with open(zipfile_location, 'wb') as my_zip:
             my_zip.write(my_file.content)
 
-    def get_stop_id(self, stop_code: int) -> int:
+    def get_stop_id(self, stop_code: int) -> str | None:
         """ Retrieve the stop_id based on a stop_code """
         self.refresh()
-        if stop_code not in self.stops.index:
+        sc_str = str(stop_code)
+        if sc_str not in self.stops.index:
             _LOGGER.error(f"Stop code {stop_code} not found in the GTFS data.")
             return None
-        return self.stops.loc[stop_code, "stop_id"]
+        
+        stop_info = self.stops.loc[sc_str]
+        if isinstance(stop_info, pandas.DataFrame):
+            return str(stop_info.iloc[0]["stop_id"])
+        return str(stop_info["stop_id"])
 
-    def _get_service_id(self, date: datetime.date) -> int:
-        """ Retrieve the service_id for a given date, handling exceptions in calendar_dates.txt """
+    def _get_service_ids(self, date: datetime.date) -> list[str]:
+        """ Retrieve the service_ids for a given date, handling exceptions in calendar_dates.txt """
         curr_weekday = date.weekday()
         curr_date_int = int(date.strftime("%Y%m%d"))
+        matching_service_ids = []
 
         # 1. Check calendar_dates.txt for explicit additions (exception_type=1)
         if not self.calendar_dates.empty:
-            added_service = self.calendar_dates[
+            added_services = self.calendar_dates[
                 (self.calendar_dates["date"] == curr_date_int) &
                 (self.calendar_dates["exception_type"] == 1)
             ]
-            if not added_service.empty:
-                return added_service.iloc[0]["service_id"]
+            matching_service_ids.extend(added_services["service_id"].tolist())
 
         # 2. Check calendar.txt for regular service
         weekday_map = {
@@ -131,40 +143,55 @@ class ParseRTLData:
                     if not removed_service.empty:
                         continue # This service is removed for today
                 
-                return service_id
+                matching_service_ids.append(service_id)
             
-        raise NoServiceFoundError(f"No service found for date {date}")
+        if not matching_service_ids:
+            raise NoServiceFoundError(f"No service found for date {date}")
+            
+        return list(set(matching_service_ids))
 
-    def _get_today_schedule(self, service_id: int, stop_id: int):
-        """Get the schedule for a given service ID and stop ID."""
-        stop_times_for_stop = self.stop_times.loc[self.stop_times.index == stop_id]
+    def _get_today_schedule(self, service_ids: list[str], stop_id: str) -> pandas.DataFrame:
+        """Get the schedule for a given list of service IDs and stop ID."""
+        try:
+            stop_times_for_stop = self.stop_times.loc[[stop_id]]
+        except KeyError:
+            return pandas.DataFrame()
+
         results = stop_times_for_stop.merge(self.trips, how='left', on='trip_id', validate='many_to_one')
-        return results[results['service_id'] == service_id].copy()
+
+        # Try exact match first
+        final_results = results[results['service_id'].isin(service_ids)].copy()
+
+        # If no results, try fuzzy match (many agencies append extra info to service_id in trips.txt)
+        if final_results.empty and not results.empty:
+            base_service_ids = [str(sid).split('-')[0] for sid in service_ids]
+            final_results = results[results['service_id'].astype(str).str.split('-').str[0].isin(base_service_ids)].copy()
+
+        return final_results
+
 
     def _calculate_arrival_datetimes(self, schedule, date):
         """Calculate the arrival datetimes for the schedule."""
-        schedule['arrival_time'] = schedule['arrival_time'].str.replace('^24', '00', regex=True)
         
         def calculate_arrival(row):
-            row_date = date
-            if row["arrival_time"].startswith("00"):
-                row_date = row_date + datetime.timedelta(days=1)
-            
-            time_h, time_m, time_s = map(int, row["arrival_time"].split(':'))
-            
             try:
-                row_time = datetime.time(hour=time_h, minute=time_m, second=time_s)
-                return datetime.datetime.combine(row_date, row_time)
-            except ValueError:
+                time_str = row["arrival_time"]
+                h, m, s = map(int, time_str.split(':'))
+                # GTFS allows times like 25:30:00 for trips that start on one day 
+                # and end on the next. h can be >= 24.
+                return datetime.datetime.combine(date, datetime.time.min) + datetime.timedelta(hours=h, minutes=m, seconds=s)
+            except (ValueError, TypeError) as e:
+                _LOGGER.error(f"Error calculating arrival datetime for {row.get('arrival_time')}: {e}")
                 return None
 
         schedule['arrival_datetime'] = schedule.apply(calculate_arrival, axis=1)
         return schedule.dropna(subset=['arrival_datetime']).sort_values(by=['arrival_datetime'])
 
-    def _get_stop_date_range(self, stop_id: int):
+    def _get_stop_date_range(self, stop_id: str):
         """Find the oldest and newest dates in the schedule for a given stop_id."""
         # 1. Get all trip_ids for this stop
-        stop_times_for_stop = self.stop_times.loc[self.stop_times.index == stop_id]
+        stop_id_str = str(stop_id)
+        stop_times_for_stop = self.stop_times.loc[self.stop_times.index == stop_id_str]
         if stop_times_for_stop.empty:
             return None, None
         
@@ -192,9 +219,11 @@ class ParseRTLData:
         
         return min_date, max_date
 
-    def get_next_stop(self, stop_id: int, parm_datetime: datetime.datetime, stop_code: int | None = None, is_lookahead: bool = False) -> Series | None:
+    def get_next_stop(self, stop_id: str, parm_datetime: datetime.datetime, stop_code: str | None = None, is_lookahead: bool = False) -> Series | None:
         """Retrieve the next stop information, optionally looking ahead to the next day."""
         self.refresh()
+        
+        stop_id = str(stop_id)
 
         # If stop_code isn't provided, try to find it from stop_id (inefficient but good for logs)
         if stop_code is None:
@@ -203,23 +232,17 @@ class ParseRTLData:
                 stop_code = matches.index[0]
 
         display_stop = f"{stop_code} (ID: {stop_id})" if stop_code else f"ID: {stop_id}"
-        _LOGGER.info(f"Retrieving next stop for stop {display_stop} at {parm_datetime} (Method: {RETRIEVAL_METHOD})")
+        _LOGGER.info(f"Retrieving next stop for stop {display_stop} at {parm_datetime} (Method: {config.retrieval_method})")
 
-        if RETRIEVAL_METHOD != "live":
+        if config.retrieval_method != "live":
             try:
-                today_service_id = self._get_service_id(parm_datetime.date())
-                today_schedule = self._get_today_schedule(today_service_id, stop_id)
+                today_service_ids = self._get_service_ids(parm_datetime.date())
+                today_schedule = self._get_today_schedule(today_service_ids, stop_id)
 
                 if today_schedule.empty:
-                    raise NoServiceFoundError(f"Empty schedule for service_id {today_service_id}")
+                    raise NoServiceFoundError(f"Empty schedule for service_ids {today_service_ids}")
 
                 today_schedule_with_arrivals = self._calculate_arrival_datetimes(today_schedule, parm_datetime.date())
-
-                # Filter for target direction if requested
-                if TARGET_DIRECTION:
-                    today_schedule_with_arrivals = today_schedule_with_arrivals[
-                        today_schedule_with_arrivals['trip_headsign'].str.contains(TARGET_DIRECTION, case=False, na=False)
-                    ]
 
                 next_stop = today_schedule_with_arrivals[today_schedule_with_arrivals['arrival_datetime'] > parm_datetime]
 
@@ -231,24 +254,30 @@ class ParseRTLData:
                 _LOGGER.info(f"No more buses in GTFS for stop {display_stop} after {parm_datetime}")
 
             except NoServiceFoundError as e:
-                _LOGGER.info(f"GTFS check failed for {parm_datetime.date()}: {e}. Trying live scraper fallback...")
+                _LOGGER.info(f"GTFS check failed for {parm_datetime.date()}: {e}")
+                if config.transit == "RTL":
+                    _LOGGER.info("Trying live scraper fallback...")
         else:
-            _LOGGER.info("Skipping GTFS check as RETRIEVAL_METHOD is 'live'")
+            if config.transit == "RTL":
+                _LOGGER.info("Skipping GTFS check as RETRIEVAL_METHOD is 'live'")
+            else:
+                _LOGGER.warning(f"RETRIEVAL_METHOD is 'live' but scraper is not available for {config.transit}. No data will be retrieved.")
 
-        # Fallback to Hastus Scraper
-        live_arrivals = self.scraper.get_schedule(stop_id, parm_datetime.date())
-        if live_arrivals:
-            _LOGGER.info(f"Found {len(live_arrivals)} arrivals via live scraper for stop {display_stop}")
-            for arrival_obj in live_arrivals:
-                if arrival_obj['arrival_datetime'] > parm_datetime:
-                    # Return a Series-like object compatible with existing code
-                    return Series({
-                        'arrival_datetime': arrival_obj['arrival_datetime'],
-                        'arrival_time': arrival_obj['arrival_time'],
-                        'route_id': arrival_obj['route_id'],
-                        'trip_headsign': arrival_obj['trip_headsign'],
-                        'retrieve_method': 'live scraper'
-                    })
+        # Fallback to Hastus Scraper (RTL Only)
+        if config.transit == "RTL":
+            live_arrivals = self.scraper.get_schedule(stop_id, parm_datetime.date())
+            if live_arrivals:
+                _LOGGER.info(f"Found {len(live_arrivals)} arrivals via live scraper for stop {display_stop}")
+                for arrival_obj in live_arrivals:
+                    if arrival_obj['arrival_datetime'] > parm_datetime:
+                        # Return a Series-like object compatible with existing code
+                        return Series({
+                            'arrival_datetime': arrival_obj['arrival_datetime'],
+                            'arrival_time': arrival_obj['arrival_time'],
+                            'route_id': arrival_obj['route_id'],
+                            'trip_headsign': arrival_obj['trip_headsign'],
+                            'retrieve_method': 'live scraper'
+                        })
 
         # --- Look-ahead logic ---
         if not is_lookahead:
