@@ -1,20 +1,25 @@
-# transit-schedule
+# :bus: transit-schedule
 
-A multi-transit bus schedule information provider for Greater Montreal.
+[![Docker CI](https://github.com/richie256/transit-schedule/actions/workflows/dockerimage.yml/badge.svg)](https://github.com/richie256/transit-schedule/actions/workflows/dockerimage.yml)
+[![Unit Tests](https://github.com/richie256/transit-schedule/actions/workflows/tests.yml/badge.svg)](https://github.com/richie256/transit-schedule/actions/workflows/tests.yml)
+[![codecov](https://codecov.io/gh/richie256/transit-schedule/branch/master/graph/badge.svg)](https://codecov.io/gh/richie256/transit-schedule)
+[![GitHub Release](https://img.shields.io/github/v/release/richie256/transit-schedule)](https://github.com/richie256/transit-schedule/releases)
+
+A multi-transit bus schedule information provider for Greater Montreal. :rocket:
 
 This project provides an application to get bus schedule information for:
-- **RTL:** Réseau de transport de Longueuil
-- **STM:** Société de transport de Montréal
-- **STL:** Société de transport de Laval
+- **RTL:** Réseau de transport de Longueuil :oncoming_bus:
+- **STM:** Société de transport de Montréal :metro:
+- **STL:** Société de transport de Laval :bus:
 
 The application can run in two different modes:
 
-1.  **HTTP Mode:** A web service to get the next bus for a given stop.
-2.  **MQTT Mode:** An MQTT publisher that periodically fetches the next bus time and publishes it to an MQTT broker.
+1.  **HTTP Mode:** A web service to get the next bus for a given stop. :globe_with_meridians:
+2.  **MQTT Mode:** An MQTT publisher that periodically fetches the next bus time and publishes it to an MQTT broker. :satellite:
 
-## Usage
+## :hammer_and_wrench: Usage
 
-### 1. Build the Docker Image
+### 1. Build the Docker Image :whale:
 
 To build the Docker image locally, run the following command in the root of the project:
 
@@ -22,9 +27,9 @@ To build the Docker image locally, run the following command in the root of the 
 docker build -t transit-schedule .
 ```
 
-### 2. Run the Container
+### 2. Run the Container :rocket:
 
-#### HTTP Mode
+#### HTTP Mode :globe_with_meridians:
 
 To run the container in HTTP mode, which provides a web service to get the next bus schedule:
 
@@ -40,7 +45,7 @@ docker run -p 8080:80 -v ./data:/data -e MODE=http -e TRANSIT=STM transit-schedu
 curl http://localhost:8080/transit-schedule/nextstop/52611
 ```
 
-#### MQTT Mode
+#### MQTT Mode :satellite:
 
 Create a `.env` file with the following content:
 
@@ -57,7 +62,7 @@ Then run the container:
 docker run --env-file .env -v ./data:/data -e MODE=mqtt transit-schedule
 ```
 
-### Configuration Options
+### :gear: Configuration Options
 
 | Environment Variable | Description | Default |
 | --- | --- | --- |
@@ -67,14 +72,14 @@ docker run --env-file .env -v ./data:/data -e MODE=mqtt transit-schedule
 | `RETRIEVAL_METHOD` | Data source strategy (`live` or `gtfs`) | `live` for RTL, `gtfs` others |
 | ... | ... | ... |
 
-## Data Sources
+## :bar_chart: Data Sources
 
 - **RTL GTFS:** http://www.rtl-longueuil.qc.ca/transit/latestfeed/RTL.zip
 - **STM GTFS:** https://www.stm.info/sites/default/files/gtfs/gtfs_stm.zip
 - **STL GTFS:** https://www.stlaval.ca/datas/opendata/GTF_STL.zip
 - **RTL Live Scraper:** Fallback for RTL when GTFS is unavailable.
 
-## Unit Tests
+## :test_tube: Unit Tests
 
 ```bash
 python3 -m pytest tests/
