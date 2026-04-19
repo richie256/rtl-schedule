@@ -354,19 +354,30 @@ class HastusScraper:
         return weekly_data
 
     def _get_times_from_cache(self, weekly_data: dict[str, list[datetime.time]], date: datetime.date) -> list[datetime.datetime]:
-        """Helper to convert cached time list to datetime list for a specific date."""
-        weekday = date.weekday()
+        """Helper to convert cached time list to datetime list for a specific date, including early morning of next day."""
         
-        if weekday < 5:
-            times = weekly_data.get('semaine', [])
-        elif weekday == 5:
-            times = weekly_data.get('samedi', [])
-        else:
-            times = weekly_data.get('dimanche', [])
+        def get_category_times(d: datetime.date):
+            wd = d.weekday()
+            if wd < 5:
+                return weekly_data.get('semaine', [])
+            elif wd == 5:
+                return weekly_data.get('samedi', [])
+            else:
+                return weekly_data.get('dimanche', [])
+
+        current_day_times = get_category_times(date)
+        next_day = date + datetime.timedelta(days=1)
+        next_day_times = get_category_times(next_day)
             
         result = []
-        for t in times:
+        for t in current_day_times:
             result.append(datetime.datetime.combine(date, t))
+        
+        # Also include very early morning of next day (e.g. 00:00 to 04:00)
+        # to handle late night bus searches correctly.
+        for t in next_day_times:
+            if t.hour < 4:
+                result.append(datetime.datetime.combine(next_day, t))
             
         return sorted(result)
 
