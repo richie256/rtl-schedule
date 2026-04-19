@@ -115,7 +115,8 @@ def start_mqtt_client():
     try:
         transit_data = ParseTransitData()
     except Exception as e:
-        _LOGGER.error(f"Failed to initialize: {e}")
+        _LOGGER.error(f"Failed to initialize: {e}. Retrying in 30 seconds...")
+        time.sleep(30)
         return
 
     _LOGGER.info("Starting MQTT publisher", extra={"config": config.to_dict()})
@@ -169,25 +170,29 @@ def start_mqtt_client():
 
     try:
         while True:
-            if is_refresh_active:
-                if datetime.datetime.now() >= refresh_end_time:
-                    is_refresh_active = False
-                    _LOGGER.info(t["refresh_period_ended"])
-                interval = 5
-            else:
-                interval = 10 if is_rush_hour() else 60
-            
-            publish_schedule(client, transit_data, stop_id)
-            
-            # Update heartbeat file for health check
             try:
-                with open("/tmp/mqtt_heartbeat", "w") as f:
-                    f.write(str(time.time()))
+                if is_refresh_active:
+                    if datetime.datetime.now() >= refresh_end_time:
+                        is_refresh_active = False
+                        _LOGGER.info(t["refresh_period_ended"])
+                    interval = 5
+                else:
+                    interval = 10 if is_rush_hour() else 60
+                
+                publish_schedule(client, transit_data, stop_id)
+                
+                # Update heartbeat file for health check
+                try:
+                    with open("/tmp/mqtt_heartbeat", "w") as f:
+                        f.write(str(time.time()))
+                except Exception as e:
+                    _LOGGER.error(f"Failed to update heartbeat file: {e}")
+                
+                _LOGGER.info(t["waiting_for"].format(interval=interval), extra={"interval": interval})
+                time.sleep(interval)
             except Exception as e:
-                _LOGGER.error(f"Failed to update heartbeat file: {e}")
-            
-            _LOGGER.info(t["waiting_for"].format(interval=interval), extra={"interval": interval})
-            time.sleep(interval)
+                _LOGGER.error(f"Error in MQTT main loop: {e}. Retrying in 60 seconds...")
+                time.sleep(60)
     finally:
         client.loop_stop()
         client.disconnect()

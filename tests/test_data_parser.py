@@ -108,14 +108,22 @@ def test_get_next_stop_live_mode(mock_zipfile, mock_read_csv, mock_isfile, mock_
     assert next_stop.route_id == '44'
     mock_scraper_inst.get_schedule.assert_called_once()
 
-def test_load_data_file_not_found(mocker):
+@patch('transit_schedule.data_parser.config')
+def test_load_data_file_not_found(mock_config, mocker):
+    mock_config.retrieval_method = 'gtfs'
+    mock_config.gtfs_data_dir = '.'
+    mock_config.gtfs_zip_file = GTFS_ZIP_FILE
     mocker.patch('os.path.isfile', return_value=False)
     mocker.patch('transit_schedule.data_parser.is_file_expired', return_value=False)
     mocker.patch('transit_schedule.data_parser.ParseTransitData._download_gtfs_file', side_effect=FileNotFoundError)
     with pytest.raises(FileNotFoundError):
         ParseTransitData()
 
-def test_load_data_bad_zip(mocker):
+@patch('transit_schedule.data_parser.config')
+def test_load_data_bad_zip(mock_config, mocker):
+    mock_config.retrieval_method = 'gtfs'
+    mock_config.gtfs_data_dir = '.'
+    mock_config.gtfs_zip_file = GTFS_ZIP_FILE
     mocker.patch('os.path.isfile', return_value=True)
     mocker.patch('transit_schedule.data_parser.is_file_expired', return_value=False)
     from zipfile import BadZipFile

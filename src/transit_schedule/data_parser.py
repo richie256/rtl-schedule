@@ -25,9 +25,28 @@ class ParseTransitData:
         _LOGGER.info("ParseTransitData init")
 
         self.data_dir = config.gtfs_data_dir
+        # Ensure data directory exists
+        if not os.path.exists(self.data_dir):
+            _LOGGER.info(f"Creating data directory: {self.data_dir}")
+            os.makedirs(self.data_dir, exist_ok=True)
+            
         self.file_path = os.path.join(self.data_dir, self.schedule_zipfile)
         self.scraper = HastusScraper()
-        self._load_data()
+        self.stops = pandas.DataFrame()
+        self.calendar = pandas.DataFrame()
+        self.stop_times = pandas.DataFrame()
+        self.trips = pandas.DataFrame()
+        self.calendar_dates = pandas.DataFrame()
+        self.min_date = None
+        self.max_date = None
+        
+        try:
+            self._load_data()
+        except Exception as e:
+            if config.retrieval_method == "live":
+                _LOGGER.warning(f"GTFS initialization failed: {e}. Continuing in LIVE mode.")
+            else:
+                raise
 
 
     def _load_data(self, force_download=False):
@@ -89,7 +108,13 @@ class ParseTransitData:
 
     def get_stop_id(self, stop_code: int) -> str | None:
         """ Retrieve the stop_id based on a stop_code """
-        self.refresh()
+        if not self.stops.empty:
+            self.refresh()
+            
+        if self.stops.empty:
+            _LOGGER.debug(f"Stops data is empty, cannot resolve stop_code {stop_code}")
+            return None
+            
         sc_str = str(stop_code)
         if sc_str not in self.stops.index:
             _LOGGER.error(f"Stop code {stop_code} not found in the GTFS data.")
@@ -223,7 +248,7 @@ class ParseTransitData:
         stop_id = str(stop_id)
 
         # If stop_code isn't provided, try to find it from stop_id (inefficient but good for logs)
-        if stop_code is None:
+        if stop_code is None and not self.stops.empty:
             matches = self.stops[self.stops['stop_id'] == stop_id]
             if not matches.empty:
                 stop_code = matches.index[0]
@@ -231,7 +256,7 @@ class ParseTransitData:
         display_stop = f"{stop_code} (ID: {stop_id})" if stop_code else f"ID: {stop_id}"
         _LOGGER.info(f"Retrieving next stop for stop {display_stop} at {parm_datetime} (Method: {config.retrieval_method})")
 
-        if config.retrieval_method != "live":
+        if config.retrieval_method != "live" and not self.stops.empty:
             try:
                 today_service_ids = self._get_service_ids(parm_datetime.date())
                 today_schedule = self._get_today_schedule(today_service_ids, stop_id)
