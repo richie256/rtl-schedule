@@ -1,6 +1,8 @@
 import datetime
 from unittest.mock import MagicMock, patch
+
 from transit_schedule.mqtt_client import start_mqtt_client
+
 
 @patch('transit_schedule.mqtt_client.config')
 @patch('transit_schedule.mqtt_client.mqtt.Client')
