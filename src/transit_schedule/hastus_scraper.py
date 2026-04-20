@@ -217,6 +217,10 @@ class HastusScraper:
                 })
         return patterns
 
+    def _get_now(self):
+        """Helper to get current datetime, easily mockable for tests."""
+        return datetime.datetime.now()
+
     def get_schedule_by_params(self, params: dict, date: datetime.date) -> list[datetime.datetime]:
         """Fetch schedule using parameters derived from urlHoraireArret with caching."""
         if not self.buildtime:
@@ -231,10 +235,11 @@ class HastusScraper:
 
         current_key = ensure_cached(date)
         
-        # If searching late at night, or if we just want robustness, 
-        # ensure next day is also cached.
-        next_day = date + datetime.timedelta(days=1)
-        ensure_cached(next_day)
+        # If searching late at night, ensure next day is also cached.
+        # This handles midnight transitions smoothly.
+        if self._get_now().hour >= 20:
+            next_day = date + datetime.timedelta(days=1)
+            ensure_cached(next_day)
 
         _LOGGER.info(f"CACHE HIT: Using cached schedule for {params['ligne']} on {date}")
         return self._get_times_from_cache(self.schedule_cache[current_key], date)

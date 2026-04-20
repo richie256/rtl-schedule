@@ -27,7 +27,12 @@ def test_cache_logic(scraper):
     scraper.get_stop_patterns = MagicMock(return_value=[test_pattern])
     
     # Mock _get_times_from_cache to return some times
-    with patch.object(scraper, 'session') as mock_session:
+    with patch.object(scraper, 'session') as mock_session, \
+         patch.object(scraper, '_get_now') as mock_now:
+        
+        # Set "now" to 10:00 AM (not triggered by >= 20:00 rule)
+        mock_now.return_value = datetime.datetime(2026, 3, 16, 10, 0, 0)
+
         # Mock landing page response
         mock_landing_res = MagicMock()
         mock_landing_res.text = '<a href="madOper.php?q=stops_stoptimes&p=2752&s=RTL&web=&pp=44_1_1&l=44&t=regulier">link</a>'
