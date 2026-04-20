@@ -6,16 +6,12 @@ from zoneinfo import ZoneInfo
 from freezegun import freeze_time
 
 from transit_schedule.const import DEFAULT_TIMEZONE, LANGUAGE, TRANSLATIONS
-from transit_schedule.mqtt_client import is_rush_hour, publish_hass_discovery_config, publish_schedule
+from transit_schedule.mqtt_client import publish_hass_discovery_config, publish_schedule
 
 
 # Mock config to be used in tests
 class MockConfig:
     def __init__(self):
-        self.morning_rush_start = "06:00"
-        self.morning_rush_end = "09:00"
-        self.evening_rush_start = "15:00"
-        self.evening_rush_end = "18:00"
         self.stop_code = 12345
         self.mqtt_state_topic = "home/transit/bus/stop_12345"
         self.language = LANGUAGE
@@ -23,42 +19,6 @@ class MockConfig:
 def get_t():
     lang = LANGUAGE if LANGUAGE in TRANSLATIONS else "fr"
     return TRANSLATIONS[lang]
-
-@patch('transit_schedule.mqtt_client.config')
-@freeze_time("2023-03-15 07:30:00")
-def test_is_rush_hour_morning(mock_cfg_inst):
-    mock_cfg_inst.morning_rush_start = "06:00"
-    mock_cfg_inst.morning_rush_end = "09:00"
-    mock_cfg_inst.evening_rush_start = "15:00"
-    mock_cfg_inst.evening_rush_end = "18:00"
-    assert is_rush_hour()
-
-@patch('transit_schedule.mqtt_client.config')
-@freeze_time("2023-03-15 16:30:00")
-def test_is_rush_hour_evening(mock_cfg_inst):
-    mock_cfg_inst.morning_rush_start = "06:00"
-    mock_cfg_inst.morning_rush_end = "09:00"
-    mock_cfg_inst.evening_rush_start = "15:00"
-    mock_cfg_inst.evening_rush_end = "18:00"
-    assert is_rush_hour()
-
-@patch('transit_schedule.mqtt_client.config')
-@freeze_time("2023-03-15 12:00:00")
-def test_is_not_rush_hour_midday(mock_cfg_inst):
-    mock_cfg_inst.morning_rush_start = "06:00"
-    mock_cfg_inst.morning_rush_end = "09:00"
-    mock_cfg_inst.evening_rush_start = "15:00"
-    mock_cfg_inst.evening_rush_end = "18:00"
-    assert not is_rush_hour()
-
-@patch('transit_schedule.mqtt_client.config')
-@freeze_time("2023-03-18 08:00:00")
-def test_is_not_rush_hour_weekend(mock_cfg_inst):
-    mock_cfg_inst.morning_rush_start = "06:00"
-    mock_cfg_inst.morning_rush_end = "09:00"
-    mock_cfg_inst.evening_rush_start = "15:00"
-    mock_cfg_inst.evening_rush_end = "18:00"
-    assert not is_rush_hour()
 
 @patch('transit_schedule.mqtt_client.config')
 def test_publish_hass_discovery_config(mock_cfg_inst):
@@ -175,10 +135,6 @@ def test_start_mqtt_client_loop(mock_sleep, mock_rtl_parser, mock_mqtt_client, m
     mock_cfg_inst.mqtt_use_tls = False
     mock_cfg_inst.mqtt_refresh_topic = "refresh"
     mock_cfg_inst.hass_discovery_enabled = False
-    mock_cfg_inst.morning_rush_start = "06:00"
-    mock_cfg_inst.morning_rush_end = "09:00"
-    mock_cfg_inst.evening_rush_start = "15:00"
-    mock_cfg_inst.evening_rush_end = "18:00"
     mock_cfg_inst.language = "fr"
     
     mock_parser_inst = mock_rtl_parser.return_value

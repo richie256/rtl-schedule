@@ -14,10 +14,6 @@ class MockConfig:
         self.hass_discovery_enabled = True
         self.hass_discovery_prefix = "homeassistant"
         self.language = "en"
-        self.morning_rush_start = "06:00"
-        self.morning_rush_end = "09:00"
-        self.evening_rush_start = "15:00"
-        self.evening_rush_end = "18:00"
         self.mqtt_state_topic = "topic"
 
     def to_dict(self):

@@ -49,12 +49,6 @@ class Config:
         self.hass_discovery_enabled = os.environ.get("HASS_DISCOVERY_ENABLED", "False").lower() == "true"
         self.hass_discovery_prefix = os.environ.get("HASS_DISCOVERY_PREFIX", "homeassistant")
 
-        # Rush Hour Configuration
-        self.morning_rush_start = os.environ.get("MORNING_RUSH_START", "06:00")
-        self.morning_rush_end = os.environ.get("MORNING_RUSH_END", "09:00")
-        self.evening_rush_start = os.environ.get("EVENING_RUSH_START", "15:00")
-        self.evening_rush_end = os.environ.get("EVENING_RUSH_END", "18:00")
-
         # MQTT Topics
         self.mqtt_refresh_topic = os.environ.get("MQTT_REFRESH_TOPIC", f"{self.transit.lower()}/schedule/refresh")
         self.mqtt_state_topic = os.environ.get("MQTT_STATE_TOPIC", f"home/transit/{self.transit.lower()}/stop_{self.stop_code}" if self.stop_code else f"home/transit/{self.transit.lower()}/stop_unknown")

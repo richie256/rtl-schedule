@@ -24,24 +24,6 @@ def get_translation():
     lang = config.language if config.language in TRANSLATIONS else "fr"
     return TRANSLATIONS[lang]
 
-def is_rush_hour() -> bool:
-    """Checks if the current time is during a weekday rush hour."""
-    now = datetime.datetime.now()
-    is_weekday = 0 <= now.weekday() <= 4  # Monday to Friday
-    if not is_weekday:
-        return False
-
-    time_now = now.time()
-    morning_rush_start = datetime.datetime.strptime(config.morning_rush_start, "%H:%M").time()
-    morning_rush_end = datetime.datetime.strptime(config.morning_rush_end, "%H:%M").time()
-    evening_rush_start = datetime.datetime.strptime(config.evening_rush_start, "%H:%M").time()
-    evening_rush_end = datetime.datetime.strptime(config.evening_rush_end, "%H:%M").time()
-
-    is_morning_rush = morning_rush_start <= time_now <= morning_rush_end
-    is_evening_rush = evening_rush_start <= time_now <= evening_rush_end
-
-    return is_morning_rush or is_evening_rush
-
 def publish_hass_discovery_config(client, stop_code, discovery_prefix):
     """Publishes the Home Assistant discovery configuration for the bus stop sensor."""
     object_id = f"transit_schedule_{stop_code}"
@@ -103,8 +85,10 @@ def publish_schedule(client, transit_data, stop_id):
         topic = config.mqtt_state_topic
         client.publish(topic, json.dumps(payload), retain=True)
         _LOGGER.info(f"Published to MQTT topic '{topic}'", extra={"topic": topic, "payload": payload})
+        return next_stop_row.arrival_datetime
     else:
         _LOGGER.info(t["no_more_buses"])
+        return None
 
 def start_mqtt_client():
     """Main function to retrieve and publish bus schedule data."""
@@ -171,15 +155,24 @@ def start_mqtt_client():
     try:
         while True:
             try:
+                now = datetime.datetime.now()
                 if is_refresh_active:
-                    if datetime.datetime.now() >= refresh_end_time:
+                    if now >= refresh_end_time:
                         is_refresh_active = False
                         _LOGGER.info(t["refresh_period_ended"])
-                    interval = 5
-                else:
-                    interval = 10 if is_rush_hour() else 60
                 
-                publish_schedule(client, transit_data, stop_id)
+                next_arrival = publish_schedule(client, transit_data, stop_id)
+                
+                if is_refresh_active:
+                    interval = 5
+                elif next_arrival:
+                    # Wait until bus has passed + 10 seconds, but at most 2 minutes (fallback)
+                    # This ensures we refresh as soon as the current "next bus" is gone.
+                    seconds_to_wait = (next_arrival - now).total_seconds() + 10
+                    interval = min(max(seconds_to_wait, 5), 120)
+                else:
+                    # No bus found, fallback to 2 minutes
+                    interval = 120
                 
                 # Update heartbeat file for health check
                 try:
@@ -188,7 +181,7 @@ def start_mqtt_client():
                 except Exception as e:
                     _LOGGER.error(f"Failed to update heartbeat file: {e}")
                 
-                _LOGGER.info(t["waiting_for"].format(interval=interval), extra={"interval": interval})
+                _LOGGER.info(t["waiting_for"].format(interval=int(interval)), extra={"interval": int(interval)})
                 time.sleep(interval)
             except Exception as e:
                 _LOGGER.error(f"Error in MQTT main loop: {e}. Retrying in 60 seconds...")
