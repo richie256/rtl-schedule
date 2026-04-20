@@ -1,8 +1,9 @@
 # :bus: transit-schedule
 
-[![Docker CI](https://github.com/richie256/transit-schedule/actions/workflows/dockerimage.yml/badge.svg)](https://github.com/richie256/transit-schedule/actions/workflows/dockerimage.yml)
-[![Unit Tests](https://github.com/richie256/transit-schedule/actions/workflows/tests.yml/badge.svg)](https://github.com/richie256/transit-schedule/actions/workflows/tests.yml)
-[![codecov](https://codecov.io/gh/richie256/transit-schedule/branch/master/graph/badge.svg)](https://codecov.io/gh/richie256/transit-schedule)
+[![Docker CI](https://github.com/richie256/transit-schedule/actions/workflows/dockerimage.yml/badge.svg?branch=master)](https://github.com/richie256/transit-schedule/actions/workflows/dockerimage.yml)
+[![Unit Tests](https://github.com/richie256/transit-schedule/actions/workflows/tests.yml/badge.svg?branch=master)](https://github.com/richie256/transit-schedule/actions/workflows/tests.yml)
+[![codecov](https://codecov.io/gh/richie256/transit-schedule/graph/badge.svg)](https://codecov.io/gh/richie256/transit-schedule)
+
 [![GitHub Release](https://img.shields.io/github/v/release/richie256/transit-schedule)](https://github.com/richie256/transit-schedule/releases)
 
 A multi-transit bus schedule information provider for Greater Montreal. :rocket:
