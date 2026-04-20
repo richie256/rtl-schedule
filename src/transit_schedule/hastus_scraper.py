@@ -222,13 +222,25 @@ class HastusScraper:
         if not self.buildtime:
             self._initialize()
             
-        week_start = date - datetime.timedelta(days=date.weekday())
-        cache_key = (params['stop'], params['pattern'], week_start)
-        
-        if cache_key in self.schedule_cache:
-            _LOGGER.info(f"CACHE HIT: Using cached schedule for {params['ligne']} on {date}")
-            return self._get_times_from_cache(self.schedule_cache[cache_key], date)
+        def ensure_cached(d):
+            week_start = d - datetime.timedelta(days=d.weekday())
+            cache_key = (params['stop'], params['pattern'], week_start)
+            if cache_key not in self.schedule_cache:
+                self._fetch_and_cache(params, d, cache_key)
+            return cache_key
 
+        current_key = ensure_cached(date)
+        
+        # If searching late at night, or if we just want robustness, 
+        # ensure next day is also cached.
+        next_day = date + datetime.timedelta(days=1)
+        ensure_cached(next_day)
+
+        _LOGGER.info(f"CACHE HIT: Using cached schedule for {params['ligne']} on {date}")
+        return self._get_times_from_cache(self.schedule_cache[current_key], date)
+
+    def _fetch_and_cache(self, params, date, cache_key):
+        """Fetch data from network and populate cache."""
         # Step 1: Fetch landing page to discover service periods (different 't' values)
         landing_params = {
             "q": "stops_stoptimes",
@@ -288,14 +300,11 @@ class HastusScraper:
 
             self.schedule_cache[cache_key] = combined_weekly_data
             self._save_cache()
-
-            return self._get_times_from_cache(combined_weekly_data, date)
             
         except Exception as e:
             _LOGGER.error(f"Scraping failed: {e}")
             import traceback
             _LOGGER.error(traceback.format_exc())
-            return []
 
     def _parse_json_weekly_schedule(self, json_data: dict, stop_id: str, pattern_id: str, target_date: datetime.date) -> dict[str, list[datetime.time]]:
         """Parse the new JSON format into weekly categories, filtering by stop and pattern."""
