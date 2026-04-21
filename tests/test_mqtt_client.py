@@ -125,8 +125,9 @@ def test_start_mqtt_client_missing_stop_code(mock_cfg_inst):
 @patch('transit_schedule.mqtt_client.config')
 @patch('transit_schedule.mqtt_client.mqtt.Client')
 @patch('transit_schedule.mqtt_client.ParseTransitData')
+@patch('transit_schedule.mqtt_client.threading.Event.wait', side_effect=KeyboardInterrupt)
 @patch('transit_schedule.mqtt_client.time.sleep', side_effect=KeyboardInterrupt)
-def test_start_mqtt_client_loop(mock_sleep, mock_rtl_parser, mock_mqtt_client, mock_cfg_inst):
+def test_start_mqtt_client_loop(mock_sleep, mock_event_wait, mock_rtl_parser, mock_mqtt_client, mock_cfg_inst):
     mock_cfg_inst.stop_code = "12345"
     mock_cfg_inst.mqtt_host = "localhost"
     mock_cfg_inst.mqtt_port = 1883

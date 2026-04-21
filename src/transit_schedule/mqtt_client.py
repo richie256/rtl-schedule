@@ -1,6 +1,7 @@
 import datetime
 import json
 import logging
+import threading
 import time
 from zoneinfo import ZoneInfo
 
@@ -107,28 +108,20 @@ def start_mqtt_client():
     
     t = get_translation()
 
-    is_refresh_active = False
-    refresh_end_time = None
-    last_discovery_publish = 0
+    refresh_event = threading.Event()
 
     client = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2, protocol=mqtt.MQTTv5)
 
     def on_message(client, userdata, msg):
-        nonlocal is_refresh_active, refresh_end_time, last_discovery_publish
         _LOGGER.info(f"Received message on topic {msg.topic}")
         if msg.topic == config.mqtt_refresh_topic:
             _LOGGER.info(t["refresh_action_received"])
-            is_refresh_active = True
-            refresh_end_time = datetime.datetime.now() + datetime.timedelta(minutes=10)
-            publish_schedule(client, transit_data, stop_id)
+            refresh_event.set()
         elif msg.topic == config.mqtt_hass_status_topic:
             _LOGGER.info(t["hass_status_received"])
-            is_refresh_active = True
-            refresh_end_time = datetime.datetime.now() + datetime.timedelta(minutes=10)
-            publish_schedule(client, transit_data, stop_id)
             if config.hass_discovery_enabled:
                 publish_hass_discovery_config(client, config.stop_code, config.hass_discovery_prefix)
-                last_discovery_publish = time.time()
+            refresh_event.set()
 
     client.on_message = on_message
 
@@ -150,39 +143,45 @@ def start_mqtt_client():
 
     if config.hass_discovery_enabled:
         publish_hass_discovery_config(client, config.stop_code, config.hass_discovery_prefix)
-        last_discovery_publish = time.time()
 
     try:
         while True:
             try:
                 now = datetime.datetime.now()
-                if is_refresh_active:
-                    if now >= refresh_end_time:
-                        is_refresh_active = False
-                        _LOGGER.info(t["refresh_period_ended"])
-                
                 next_arrival = publish_schedule(client, transit_data, stop_id)
                 
-                if is_refresh_active:
-                    interval = 5
-                elif next_arrival:
-                    # Wait until bus has passed + 10 seconds, but at most 2 minutes (fallback)
+                if next_arrival:
+                    # Wait until bus has passed + 10 seconds.
                     # This ensures we refresh as soon as the current "next bus" is gone.
                     seconds_to_wait = (next_arrival - now).total_seconds() + 10
-                    interval = min(max(seconds_to_wait, 5), 120)
+                    # If bus is already in the past or very soon, wait at least 30s before next check
+                    # to avoid tight loops if data hasn't updated yet.
+                    interval = max(seconds_to_wait, 30)
                 else:
-                    # No bus found, fallback to 2 minutes
-                    interval = 120
-                
-                # Update heartbeat file for health check
-                try:
-                    with open("/tmp/mqtt_heartbeat", "w") as f:
-                        f.write(str(time.time()))
-                except Exception as e:
-                    _LOGGER.error(f"Failed to update heartbeat file: {e}")
+                    # No bus found, wait 1 hour
+                    interval = 3600
                 
                 _LOGGER.info(t["waiting_for"].format(interval=int(interval)), extra={"interval": int(interval)})
-                time.sleep(interval)
+                
+                # Wait for timeout OR event, with periodic heartbeat updates
+                wait_until = time.time() + interval
+                while time.time() < wait_until:
+                    # Update heartbeat file for health check
+                    try:
+                        with open("/tmp/mqtt_heartbeat", "w") as f:
+                            f.write(str(time.time()))
+                    except Exception as e:
+                        _LOGGER.error(f"Failed to update heartbeat file: {e}")
+                    
+                    remaining = wait_until - time.time()
+                    if remaining <= 0:
+                        break
+                        
+                    # Wait in chunks of 60s to keep heartbeat updated
+                    if refresh_event.wait(timeout=min(remaining, 60)):
+                        _LOGGER.info("Refresh event signaled, waking up...")
+                        refresh_event.clear()
+                        break
             except Exception as e:
                 _LOGGER.error(f"Error in MQTT main loop: {e}. Retrying in 60 seconds...")
                 time.sleep(60)

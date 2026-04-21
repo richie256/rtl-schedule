@@ -7,8 +7,8 @@ from transit_schedule.mqtt_client import start_mqtt_client
 @patch('transit_schedule.mqtt_client.config')
 @patch('transit_schedule.mqtt_client.mqtt.Client')
 @patch('transit_schedule.mqtt_client.ParseTransitData')
-@patch('transit_schedule.mqtt_client.time.sleep')
-def test_mqtt_loop_interval_bus_upcoming(mock_sleep, mock_parser, mock_mqtt_client, mock_cfg):
+@patch('transit_schedule.mqtt_client.threading.Event.wait')
+def test_mqtt_loop_interval_bus_upcoming(mock_event_wait, mock_parser, mock_mqtt_client, mock_cfg):
     # Mock config
     mock_cfg.stop_code = "12345"
     mock_cfg.mqtt_host = "localhost"
@@ -37,7 +37,7 @@ def test_mqtt_loop_interval_bus_upcoming(mock_sleep, mock_parser, mock_mqtt_clie
     parser_inst.get_next_stop.return_value = mock_next_stop
     
     # We want to break the loop after one iteration
-    mock_sleep.side_effect = KeyboardInterrupt()
+    mock_event_wait.side_effect = KeyboardInterrupt()
     
     try:
         start_mqtt_client()
@@ -45,17 +45,16 @@ def test_mqtt_loop_interval_bus_upcoming(mock_sleep, mock_parser, mock_mqtt_clie
         pass
     
     # Interval should be 30 + 10 = 40 seconds
-    # But it depends on the exact time of 'now' in start_mqtt_client
-    # Let's check that it's around 40
-    args, _ = mock_sleep.call_args
-    interval = args[0]
-    assert 35 <= interval <= 45
+    # refresh_event.wait is called with timeout=min(remaining, 60)
+    args, kwargs = mock_event_wait.call_args
+    timeout = kwargs['timeout']
+    assert 35 <= timeout <= 45
 
 @patch('transit_schedule.mqtt_client.config')
 @patch('transit_schedule.mqtt_client.mqtt.Client')
 @patch('transit_schedule.mqtt_client.ParseTransitData')
-@patch('transit_schedule.mqtt_client.time.sleep')
-def test_mqtt_loop_interval_fallback(mock_sleep, mock_parser, mock_mqtt_client, mock_cfg):
+@patch('transit_schedule.mqtt_client.threading.Event.wait')
+def test_mqtt_loop_interval_fallback(mock_event_wait, mock_parser, mock_mqtt_client, mock_cfg):
     # Mock config
     mock_cfg.stop_code = "12345"
     mock_cfg.mqtt_host = "localhost"
@@ -74,21 +73,21 @@ def test_mqtt_loop_interval_fallback(mock_sleep, mock_parser, mock_mqtt_client, 
     parser_inst.get_next_stop.return_value = None
     
     # We want to break the loop after one iteration
-    mock_sleep.side_effect = KeyboardInterrupt()
+    mock_event_wait.side_effect = KeyboardInterrupt()
     
     try:
         start_mqtt_client()
     except KeyboardInterrupt:
         pass
     
-    # Fallback interval should be 120 seconds
-    mock_sleep.assert_called_once_with(120)
+    # Fallback interval is 3600, but wait is called with min(3600, 60)
+    mock_event_wait.assert_called_once_with(timeout=60)
 
 @patch('transit_schedule.mqtt_client.config')
 @patch('transit_schedule.mqtt_client.mqtt.Client')
 @patch('transit_schedule.mqtt_client.ParseTransitData')
-@patch('transit_schedule.mqtt_client.time.sleep')
-def test_mqtt_loop_interval_max_cap(mock_sleep, mock_parser, mock_mqtt_client, mock_cfg):
+@patch('transit_schedule.mqtt_client.threading.Event.wait')
+def test_mqtt_loop_interval_no_cap(mock_event_wait, mock_parser, mock_mqtt_client, mock_cfg):
     # Mock config
     mock_cfg.stop_code = "12345"
     mock_cfg.mqtt_host = "localhost"
@@ -117,12 +116,12 @@ def test_mqtt_loop_interval_max_cap(mock_sleep, mock_parser, mock_mqtt_client, m
     parser_inst.get_next_stop.return_value = mock_next_stop
     
     # We want to break the loop after one iteration
-    mock_sleep.side_effect = KeyboardInterrupt()
+    mock_event_wait.side_effect = KeyboardInterrupt()
     
     try:
         start_mqtt_client()
     except KeyboardInterrupt:
         pass
     
-    # Interval should be capped at 120 seconds
-    mock_sleep.assert_called_once_with(120)
+    # Interval is 3600+10, but wait is called with min(3610, 60)
+    mock_event_wait.assert_called_once_with(timeout=60)
