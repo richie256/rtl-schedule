@@ -9,6 +9,166 @@ from transit_schedule.const import TARGET_DIRECTION
 from transit_schedule.hastus_scraper import HastusScraper
 
 
+def test_hastus_scraper_route_filtering(scraper, mocker):
+    """Verifies that get_schedule filters by TARGET_ROUTE."""
+    stop_id = 2752
+    today = datetime.date(2026, 3, 16)
+    
+    # Mock patterns: one 44, one 47
+    patterns = [
+        {"stop": "2752", "pattern": "P1", "ligne": " 44 Direction Terminus Panama"},
+        {"stop": "2752", "pattern": "P2", "ligne": " 47 Direction Terminus Panama"}
+    ]
+    mocker.patch.object(scraper, 'get_stop_patterns', return_value=patterns)
+    mocker.patch.object(scraper, 'get_schedule_by_params', return_value=[datetime.datetime.combine(today, datetime.time(10, 0))])
+    
+    # Mock TARGET_ROUTE to "44"
+    mocker.patch('transit_schedule.hastus_scraper.TARGET_ROUTE', "44")
+    
+    arrivals = scraper.get_schedule(stop_id, today)
+    assert arrivals
+    assert all(a['route_id'] == "44" for a in arrivals)
+    assert len(arrivals) == 1
+
+def test_parse_json_weekly_schedule_robust_matching(scraper):
+    """Verifies that _parse_json_weekly_schedule doesn't confuse similar IDs (e.g. 44 and 144)."""
+    json_data = {
+        'data': [
+            {'scheduledarrival': 28800, 'date': '2026-03-16T00:00:00Z', 'stopid': 'S1', 'id': '15:44:1:01'},
+            {'scheduledarrival': 32400, 'date': '2026-03-16T00:00:00Z', 'stopid': 'S1', 'id': '15:144:1:01'}
+        ]
+    }
+    target_date = datetime.date(2026, 3, 16)
+    
+    # Searching for '44' should NOT find '144'
+    data_44 = scraper._parse_json_weekly_schedule(json_data, 'S1', '44', target_date)
+    assert len(data_44['semaine']) == 1
+    assert data_44['semaine'][0] == datetime.time(8, 0)
+    
+    # Searching for '144' should NOT find '44'
+    data_144 = scraper._parse_json_weekly_schedule(json_data, 'S1', '144', target_date)
+    assert len(data_144['semaine']) == 1
+    assert data_144['semaine'][0] == datetime.time(9, 0)
+
+
+def test_hastus_scraper_late_night_times(scraper):
+    """Verifies that times like 24:30 are correctly projected to the next day, especially across category changes."""
+    json_data = {
+        'data': [
+            {'scheduledarrival': 88200, 'date': '2026-04-24T00:00:00Z', 'stopid': 'S1', 'id': 'P1:01'}, # Fri 24:30
+        ]
+    }
+    target_date = datetime.date(2026, 4, 24) # Friday
+    
+    # Current implementation would put 00:30 in Friday's category (semaine)
+    data = scraper._parse_json_weekly_schedule(json_data, 'S1', 'P1', target_date)
+    
+    # Setup cache with this data
+    # Note: 'samedi' and 'dimanche' are empty
+    cache_key = ("S1", "P1", datetime.date(2026, 4, 20))
+    scraper.schedule_cache[cache_key] = data
+    
+    # Search on Friday at 23:50
+    arrivals = scraper._get_times_from_cache(data, target_date)
+    
+    # The arrival should be Saturday 00:30
+    # If the bug exists, this will FAIL because samedi category is empty
+    assert any(a == datetime.datetime(2026, 4, 25, 0, 30) for a in arrivals)
+
+def test_parse_html_weekly_schedule_late_night(scraper):
+    """Verifies that HTML parser handles 24:30+."""
+    html = """
+    <table>
+        <tr><td><b>Semaine</b></td></tr>
+        <tr><td>24:30</td></tr>
+    </table>
+    """
+    data = scraper._parse_html_weekly_schedule(html)
+    assert datetime.time(0, 30) in data['semaine']
+
+def test_hastus_scraper_ignore_irrelevant_links(scraper, mocker):
+    """Verifies that links from previous/future weeks are ignored."""
+    test_pattern = {"stop": "2752", "pattern": "P1", "ligne": "44"}
+    search_date = datetime.date(2026, 4, 22) # Wednesday
+    
+    # Mock landing page with one valid link and one from a past week
+    mock_landing = MagicMock()
+    mock_landing.text = """
+        <a href="madOper.php?q=stops_stoptimes&t=20260422">Current Wed</a>
+        <a href="madOper.php?q=stops_stoptimes&t=20260412">Past Sunday</a>
+    """
+    
+    # Mock JSON response only for the valid link
+    mock_json = {'data': [{'scheduledarrival': 36000, 'stopid': '2752', 'id': 'P1:01'}]}
+    
+    def side_effect(url, **kwargs):
+        mock_res = MagicMock()
+        if "t=20260422" in url:
+            mock_res.json.return_value = mock_json
+            mock_res.text = json.dumps(mock_json)
+        elif "t=20260412" in url:
+            pytest.fail("Should NOT fetch historical link")
+        else:
+            mock_res = mock_landing
+            mock_res.text = mock_landing.text
+        return mock_res
+
+    mocker.patch.object(scraper.session, 'get', side_effect=side_effect)
+    
+    cache_key = ("2752", "P1", datetime.date(2026, 4, 20))
+    scraper._fetch_and_cache(test_pattern, search_date, cache_key)
+    
+    # Verify only current week data is in cache
+    assert len(scraper.schedule_cache[cache_key]['semaine']) == 1
+    assert len(scraper.schedule_cache[cache_key]['dimanche']) == 0
+    """Verifies that links for different days are correctly categorized during cache population."""
+    test_pattern = {"stop": "2752", "pattern": "P1", "ligne": "44"}
+    search_date = datetime.date(2026, 4, 22) # Wednesday
+    
+    # Mock landing page with two links: one weekday, one Saturday
+    mock_landing = MagicMock()
+    mock_landing.text = """
+        <a href="madOper.php?q=stops_stoptimes&t=20260422">Semaine</a>
+        <a href="madOper.php?q=stops_stoptimes&t=20260425">Samedi</a>
+    """
+    
+    # Mock JSON responses for both links
+    mock_json_weekday = {
+        'data': [{'scheduledarrival': 36000, 'stopid': '2752', 'id': 'P1:01'}] # 10:00
+    }
+    mock_json_sat = {
+        'data': [{'scheduledarrival': 39600, 'stopid': '2752', 'id': 'P1:01'}] # 11:00
+    }
+    
+    def side_effect(url, **kwargs):
+        mock_res = MagicMock()
+        if "t=20260422" in url:
+            mock_res.json.return_value = mock_json_weekday
+            mock_res.text = json.dumps(mock_json_weekday)
+        elif "t=20260425" in url:
+            mock_res.json.return_value = mock_json_sat
+            mock_res.text = json.dumps(mock_json_sat)
+        else:
+            mock_res = mock_landing
+            mock_res.text = mock_landing.text
+        return mock_res
+
+    mocker.patch.object(scraper.session, 'get', side_effect=side_effect)
+    
+    cache_key = ("2752", "P1", datetime.date(2026, 4, 20))
+    scraper._fetch_and_cache(test_pattern, search_date, cache_key)
+    
+    cached_data = scraper.schedule_cache[cache_key]
+    
+    # Weekday category should only have the 10:00 time
+    assert datetime.time(10, 0) in cached_data['semaine']
+    assert datetime.time(11, 0) not in cached_data['semaine']
+    
+    # Saturday category should only have the 11:00 time
+    assert datetime.time(11, 0) in cached_data['samedi']
+    assert datetime.time(10, 0) not in cached_data['samedi']
+
+
 @pytest.fixture
 def scraper(mocker):
     """Returns an instance of HastusScraper with basic network calls mocked."""
@@ -159,21 +319,12 @@ def test_parse_html_weekly_schedule(scraper):
     assert len(data['semaine']) == 2
     assert data['semaine'][0] == datetime.time(1, 15) # 25:15 % 24
     assert data['semaine'][1] == datetime.time(8, 0)
-    assert data['samedi'][0] == datetime.time(9, 0)
-    assert data['dimanche'][0] == datetime.time(10, 0)
-
-def test_parse_json_weekly_schedule(scraper):
-    json_data = {
-        'data': [
-            {'scheduledarrival': 28800, 'date': '2026-03-16T00:00:00Z', 'stopid': 'S1', 'id': 'P1:01'}, # Mon 08:00
-            {'scheduledarrival': 32400, 'date': '2026-03-21T00:00:00Z', 'stopid': 'S1', 'id': 'P1:02'}, # Sat 09:00
-            {'scheduledarrival': 36000, 'date': '2026-03-22T00:00:00Z', 'stopid': 'S1', 'id': 'P1:03'}  # Sun 10:00
-        ]
-    }
-    target_date = datetime.date(2026, 3, 16)
-    data = scraper._parse_json_weekly_schedule(json_data, 'S1', 'P1', target_date)
-    assert data['semaine'][0] == datetime.time(8, 0)
-    assert data['samedi'][0] == datetime.time(9, 0)
+    
+    # 25:15 from semaine also goes into samedi
+    assert len(data['samedi']) == 2
+    assert data['samedi'][0] == datetime.time(1, 15)
+    assert data['samedi'][1] == datetime.time(9, 0)
+    
     assert data['dimanche'][0] == datetime.time(10, 0)
 
 def test_get_stop_code_from_id(scraper):
@@ -185,10 +336,13 @@ def test_get_stop_code_from_id(scraper):
 def test_load_save_cache(scraper, mocker):
     mocker.patch("os.path.exists", return_value=True)
     cache_data = {
-        "2752|P1|2026-03-16": {
-            "semaine": ["08:00:00"],
-            "samedi": [],
-            "dimanche": []
+        "version": "2",
+        "data": {
+            "2752|P1|2026-03-16": {
+                "semaine": ["08:00:00"],
+                "samedi": [],
+                "dimanche": []
+            }
         }
     }
     mocker.patch("builtins.open", mocker.mock_open(read_data=json.dumps(cache_data)))

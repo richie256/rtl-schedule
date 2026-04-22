@@ -30,6 +30,8 @@ class Config:
             "STL": ""
         }
         self.target_direction = os.environ.get("TARGET_DIRECTION", default_directions.get(self.transit, ""))
+        self.target_route = os.environ.get("TARGET_ROUTE")
+        self.force_cache_refresh = os.environ.get("FORCE_CACHE_REFRESH", "False").lower() == "true"
 
         # MQTT Configuration
         self.mqtt_host = os.environ.get("MQTT_HOST")

@@ -9,6 +9,8 @@ from transit_schedule.mqtt_client import start_mqtt_client
 @patch('transit_schedule.mqtt_client.ParseTransitData')
 @patch('transit_schedule.mqtt_client.threading.Event.wait')
 def test_mqtt_loop_interval_bus_upcoming(mock_event_wait, mock_parser, mock_mqtt_client, mock_cfg):
+    import transit_schedule.mqtt_client
+    transit_schedule.mqtt_client._MQTT_LOOP_RUNNING = False
     # Mock config
     mock_cfg.stop_code = "12345"
     mock_cfg.mqtt_host = "localhost"
@@ -55,6 +57,8 @@ def test_mqtt_loop_interval_bus_upcoming(mock_event_wait, mock_parser, mock_mqtt
 @patch('transit_schedule.mqtt_client.ParseTransitData')
 @patch('transit_schedule.mqtt_client.threading.Event.wait')
 def test_mqtt_loop_interval_fallback(mock_event_wait, mock_parser, mock_mqtt_client, mock_cfg):
+    import transit_schedule.mqtt_client
+    transit_schedule.mqtt_client._MQTT_LOOP_RUNNING = False
     # Mock config
     mock_cfg.stop_code = "12345"
     mock_cfg.mqtt_host = "localhost"
@@ -88,6 +92,8 @@ def test_mqtt_loop_interval_fallback(mock_event_wait, mock_parser, mock_mqtt_cli
 @patch('transit_schedule.mqtt_client.ParseTransitData')
 @patch('transit_schedule.mqtt_client.threading.Event.wait')
 def test_mqtt_loop_interval_no_cap(mock_event_wait, mock_parser, mock_mqtt_client, mock_cfg):
+    import transit_schedule.mqtt_client
+    transit_schedule.mqtt_client._MQTT_LOOP_RUNNING = False
     # Mock config
     mock_cfg.stop_code = "12345"
     mock_cfg.mqtt_host = "localhost"

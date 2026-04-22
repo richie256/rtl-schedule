@@ -70,8 +70,19 @@ docker run --env-file .env -v ./data:/data -e MODE=mqtt transit-schedule
 | `TRANSIT` | Transit agency (`RTL`, `STM`, `STL`) | `RTL` |
 | `MODE` | Application mode (`http` or `mqtt`) | `http` |
 | `STOP_CODE` | Public stop code (Required for MQTT mode) | None |
+| `TARGET_ROUTE` | Filter by specific route ID (e.g., `44`) | None |
+| `TARGET_DIRECTION` | Filter by trip headsign (e.g., `Direction Terminus Panama`) | `Direction Terminus Panama` (RTL only) |
+| `FORCE_CACHE_REFRESH` | Manually invalidate and refresh the live scraper cache | `False` |
 | `RETRIEVAL_METHOD` | Data source strategy (`live` or `gtfs`) | `live` for RTL, `gtfs` others |
-| ... | ... | ... |
+
+### :mag: Filtering Logic
+
+The application supports two layers of filtering to ensure you get exactly the bus you're looking for:
+
+1.  **`TARGET_ROUTE`**: Used to isolate a specific route number. This is highly recommended if your stop is served by multiple routes with similar numbers (e.g., route `44` vs route `144`). When set, only exact matches for the route ID are returned.
+2.  **`TARGET_DIRECTION`**: Used to filter by the destination or direction (headsign). For **RTL**, this defaults to `Direction Terminus Panama`. 
+
+If both are set, the bus must match **both** the route ID and the direction string to be included in the schedule.
 
 ## :bar_chart: Data Sources
 

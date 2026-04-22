@@ -27,6 +27,8 @@ class MockConfig:
 @patch('transit_schedule.mqtt_client.threading.Event.wait')
 @patch('transit_schedule.mqtt_client.time.sleep')
 def test_on_message_hass_status(mock_sleep, mock_event_wait, mock_publish_discovery, mock_publish_schedule, mock_rtl_parser, mock_mqtt_client, mock_cfg):
+    import transit_schedule.mqtt_client
+    transit_schedule.mqtt_client._MQTT_LOOP_RUNNING = False
     # Setup mock config
     cfg = MockConfig()
     mock_cfg.__dict__.update(cfg.__dict__)

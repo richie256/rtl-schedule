@@ -117,6 +117,8 @@ def test_publish_schedule_no_bus(mock_cfg_inst):
 @patch('transit_schedule.mqtt_client.config')
 def test_start_mqtt_client_missing_stop_code(mock_cfg_inst):
     mock_cfg_inst.stop_code = None
+    import transit_schedule.mqtt_client
+    transit_schedule.mqtt_client._MQTT_LOOP_RUNNING = False
     with patch('transit_schedule.mqtt_client._LOGGER') as mock_logger:
         from transit_schedule.mqtt_client import start_mqtt_client
         start_mqtt_client()
@@ -128,6 +130,8 @@ def test_start_mqtt_client_missing_stop_code(mock_cfg_inst):
 @patch('transit_schedule.mqtt_client.threading.Event.wait', side_effect=KeyboardInterrupt)
 @patch('transit_schedule.mqtt_client.time.sleep', side_effect=KeyboardInterrupt)
 def test_start_mqtt_client_loop(mock_sleep, mock_event_wait, mock_rtl_parser, mock_mqtt_client, mock_cfg_inst):
+    import transit_schedule.mqtt_client
+    transit_schedule.mqtt_client._MQTT_LOOP_RUNNING = False
     mock_cfg_inst.stop_code = "12345"
     mock_cfg_inst.mqtt_host = "localhost"
     mock_cfg_inst.mqtt_port = 1883

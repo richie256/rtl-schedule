@@ -11,6 +11,7 @@ DEFAULT_TIMEZONE = config.timezone
 RETRIEVAL_METHOD = config.retrieval_method
 LANGUAGE = config.language
 TARGET_DIRECTION = config.target_direction
+TARGET_ROUTE = config.target_route
 
 TRANSLATIONS = {
     "en": {

@@ -14,11 +14,17 @@ from transit_schedule.const import _LOGGER, DEFAULT_TIMEZONE, TRANSIT, TRANSLATI
 from transit_schedule.data_parser import ParseTransitData
 
 # Configure logging
-logHandler = logging.StreamHandler()
-formatter = jsonlogger.JsonFormatter()
-logHandler.setFormatter(formatter)
-_LOGGER.addHandler(logHandler)
-_LOGGER.setLevel(logging.INFO)
+if not _LOGGER.handlers:
+    logHandler = logging.StreamHandler()
+    # Include threadName to debug potential duplicate loops
+    formatter = jsonlogger.JsonFormatter("%(asctime)s %(levelname)s %(threadName)s %(message)s")
+    logHandler.setFormatter(formatter)
+    _LOGGER.addHandler(logHandler)
+    _LOGGER.setLevel(logging.INFO)
+
+# Global flag to prevent multiple loops in the same process
+_MQTT_LOOP_RUNNING = False
+_MQTT_LOOP_LOCK = threading.Lock()
 
 def get_translation():
     """Returns the translation dictionary for the configured language."""
@@ -93,6 +99,14 @@ def publish_schedule(client, transit_data, stop_id):
 
 def start_mqtt_client():
     """Main function to retrieve and publish bus schedule data."""
+    global _MQTT_LOOP_RUNNING
+
+    with _MQTT_LOOP_LOCK:
+        if _MQTT_LOOP_RUNNING:
+            _LOGGER.warning("MQTT client loop is already running in this process. Skipping duplicate start.")
+            return
+        _MQTT_LOOP_RUNNING = True
+
     if config.stop_code is None:
         _LOGGER.error("STOP_CODE environment variable is required but missing or invalid.")
         return
@@ -147,6 +161,10 @@ def start_mqtt_client():
     try:
         while True:
             try:
+                # Clear any events that happened during the previous refresh 
+                # to avoid immediate double-refreshes unless a new message arrives.
+                refresh_event.clear()
+
                 now = datetime.datetime.now()
                 next_arrival = publish_schedule(client, transit_data, stop_id)
                 
@@ -180,11 +198,14 @@ def start_mqtt_client():
                     # Wait in chunks of 60s to keep heartbeat updated
                     if refresh_event.wait(timeout=min(remaining, 60)):
                         _LOGGER.info("Refresh event signaled, waking up...")
-                        refresh_event.clear()
+                        # We don't clear here anymore, we clear at the top of the loop
+                        # to ensure we don't miss a signal during the refresh itself.
                         break
             except Exception as e:
                 _LOGGER.error(f"Error in MQTT main loop: {e}. Retrying in 60 seconds...")
                 time.sleep(60)
     finally:
+        with _MQTT_LOOP_LOCK:
+            _MQTT_LOOP_RUNNING = False
         client.loop_stop()
         client.disconnect()
