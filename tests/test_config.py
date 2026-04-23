@@ -1,7 +1,9 @@
 
 import os
 from unittest.mock import patch
+
 from transit_schedule.config import Config
+
 
 def test_config_default():
     with patch.dict(os.environ, {}, clear=True):

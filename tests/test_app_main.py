@@ -1,7 +1,8 @@
 
-import os
 from unittest.mock import patch
+
 from transit_schedule.app import main
+
 
 @patch('transit_schedule.app.start_http_server')
 @patch('transit_schedule.app.os.environ.get')

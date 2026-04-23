@@ -1,14 +1,16 @@
 
 import datetime
 import json
-import threading
 from unittest.mock import MagicMock, patch
-from zoneinfo import ZoneInfo
 
-from freezegun import freeze_time
+from transit_schedule.const import TRANSLATIONS
+from transit_schedule.mqtt_client import (
+    on_message_callback,
+    publish_hass_discovery_config,
+    publish_schedule,
+    start_mqtt_client,
+)
 
-from transit_schedule.const import DEFAULT_TIMEZONE, LANGUAGE, TRANSLATIONS
-from transit_schedule.mqtt_client import publish_hass_discovery_config, publish_schedule, start_mqtt_client, on_message_callback
 
 @patch('transit_schedule.mqtt_client.config')
 def test_publish_hass_discovery_config(mock_cfg):

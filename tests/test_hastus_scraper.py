@@ -1,12 +1,13 @@
 
 import datetime
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
+
 import pytest
 import requests
-import re
-from transit_schedule.const import TARGET_DIRECTION, TARGET_ROUTE, TRANSIT
+
 from transit_schedule.hastus_scraper import HastusScraper
+
 
 @pytest.fixture
 def scraper(mocker):
@@ -230,7 +231,8 @@ def test_fetch_and_cache_bad_response(scraper, mocker):
     mock_bad_res.status_code = 200
     mock_bad_res.json.return_value = "not a dict"
     def side_effect(url, **kwargs):
-        if "j=1" in url: return mock_bad_res
+        if "j=1" in url: 
+            return mock_bad_res
         return mock_landing
     mocker.patch.object(scraper.session, 'get', side_effect=side_effect)
     scraper._fetch_and_cache({"stop": "S1", "pattern": "P1", "ligne": "L1"}, datetime.date.today(), ("S1", "P1", datetime.date.today()))
