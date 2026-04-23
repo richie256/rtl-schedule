@@ -22,7 +22,7 @@ def settings_from_file(filename: str, config: dict = None) -> str | None:
             try:
                 with open(filename) as fdesc:
                     return json.loads(fdesc.read())
-            except OSError as error:
+            except (OSError, ValueError) as error:
                 _LOGGER.exception(error)
                 return False
         else:

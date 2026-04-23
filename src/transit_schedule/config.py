@@ -35,7 +35,11 @@ class Config:
 
         # MQTT Configuration
         self.mqtt_host = os.environ.get("MQTT_HOST")
-        self.mqtt_port = int(os.environ.get("MQTT_PORT", 1883))
+        try:
+            self.mqtt_port = int(os.environ.get("MQTT_PORT", 1883))
+        except (ValueError, TypeError) as e:
+            _LOGGER.error(f"Error parsing MQTT_PORT: {e}. Using default 1883.")
+            self.mqtt_port = 1883
         self.mqtt_username = os.environ.get("MQTT_USERNAME")
         self.mqtt_password = os.environ.get("MQTT_PASSWORD")
         self.mqtt_use_tls = os.environ.get("MQTT_USE_TLS", "False").lower() == "true"

@@ -96,6 +96,17 @@ def publish_schedule(client, transit_data, stop_id):
         _LOGGER.info(t["no_more_buses"])
         return None
 
+def on_message_callback(client, userdata, msg, refresh_event, t):
+    _LOGGER.info(f"Received message on topic {msg.topic}")
+    if msg.topic == config.mqtt_refresh_topic:
+        _LOGGER.info(t["refresh_action_received"])
+        refresh_event.set()
+    elif msg.topic == config.mqtt_hass_status_topic:
+        _LOGGER.info(t["hass_status_received"])
+        if config.hass_discovery_enabled:
+            publish_hass_discovery_config(client, config.stop_code, config.hass_discovery_prefix)
+        refresh_event.set()
+
 def start_mqtt_client():
     """Main function to retrieve and publish bus schedule data."""
     global _MQTT_LOOP_RUNNING
@@ -125,18 +136,7 @@ def start_mqtt_client():
 
     client = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2, protocol=mqtt.MQTTv5)
 
-    def on_message(client, userdata, msg):
-        _LOGGER.info(f"Received message on topic {msg.topic}")
-        if msg.topic == config.mqtt_refresh_topic:
-            _LOGGER.info(t["refresh_action_received"])
-            refresh_event.set()
-        elif msg.topic == config.mqtt_hass_status_topic:
-            _LOGGER.info(t["hass_status_received"])
-            if config.hass_discovery_enabled:
-                publish_hass_discovery_config(client, config.stop_code, config.hass_discovery_prefix)
-            refresh_event.set()
-
-    client.on_message = on_message
+    client.on_message = lambda c, u, m: on_message_callback(c, u, m, refresh_event, t)
 
     if config.mqtt_username and config.mqtt_password:
         client.username_pw_set(config.mqtt_username, config.mqtt_password)

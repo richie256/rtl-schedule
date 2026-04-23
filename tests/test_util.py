@@ -52,3 +52,20 @@ def test_settings_from_file_read_nonexistent():
     # Test reading from a non-existent file
     read_config = settings_from_file("non_existent_file.json")
     assert read_config == {}
+
+def test_settings_from_file_write_error(mocker):
+    # Test writing to a read-only or inaccessible location
+    with patch("builtins.open", side_effect=OSError("Permission denied")):
+        assert settings_from_file("readonly.json", {"key": "value"}) is False
+
+def test_settings_from_file_read_error(test_file):
+    # Test reading a corrupted JSON file
+    with open(test_file, "w") as f:
+        f.write("corrupted { json")
+    
+    assert settings_from_file(test_file) is False
+
+def test_is_file_expired_zero_size(mocker):
+    mocker.patch('transit_schedule.util.os.path.isfile', return_value=True)
+    mocker.patch('transit_schedule.util.os.path.getsize', return_value=0)
+    assert is_file_expired("empty_file.txt") is True

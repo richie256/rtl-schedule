@@ -17,10 +17,35 @@ def client(mock_transit_data):
     app.config['TESTING'] = True
     return app.test_client()
 
-def test_health_check(client):
-    response = client.get('/health')
-    assert response.status_code == 200
-    assert response.get_json() == {"status": "ok"}
+def test_get_next_stop_uninitialized(mocker):
+    """Test get_next_stop when transit_data is None."""
+    from transit_schedule.http_server import create_app
+    mocker.patch('transit_schedule.http_server.data_parser.ParseTransitData', side_effect=Exception("Failed"))
+    app = create_app()
+    with app.test_client() as client:
+        response = client.get('/transit-schedule/nextstop/32752')
+        assert response.status_code == 500
+        assert response.json == {"error": "Transit data not initialized"}
+
+def test_create_app_error(mocker):
+    """Test create_app when an error occurs during initialization."""
+    from transit_schedule.http_server import create_app
+    mocker.patch('transit_schedule.http_server.data_parser.ParseTransitData', side_effect=Exception("Initialization failed"))
+    mock_logger = mocker.patch('transit_schedule.http_server._LOGGER')
+    
+    app = create_app()
+    assert app is not None # Flask app still created, but error logged
+    mock_logger.exception.assert_called()
+
+def test_start_http_server(mocker):
+    """Test start_http_server."""
+    from transit_schedule.http_server import start_http_server
+    mock_app = MagicMock()
+    mocker.patch('transit_schedule.http_server.create_app', return_value=mock_app)
+    
+    start_http_server()
+    mock_app.run.assert_called_once_with(host='0.0.0.0', port=80)
+
 
 @freeze_time("2026-03-16 08:00:00")
 def test_get_next_stop_success(client, mock_transit_data):

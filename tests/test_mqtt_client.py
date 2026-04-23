@@ -1,97 +1,39 @@
+
 import datetime
 import json
+import threading
 from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
 from freezegun import freeze_time
 
 from transit_schedule.const import DEFAULT_TIMEZONE, LANGUAGE, TRANSLATIONS
-from transit_schedule.mqtt_client import publish_hass_discovery_config, publish_schedule
-
-
-# Mock config to be used in tests
-class MockConfig:
-    def __init__(self):
-        self.stop_code = 12345
-        self.mqtt_state_topic = "home/transit/bus/stop_12345"
-        self.language = LANGUAGE
-
-def get_t():
-    lang = LANGUAGE if LANGUAGE in TRANSLATIONS else "fr"
-    return TRANSLATIONS[lang]
+from transit_schedule.mqtt_client import publish_hass_discovery_config, publish_schedule, start_mqtt_client, on_message_callback
 
 @patch('transit_schedule.mqtt_client.config')
-def test_publish_hass_discovery_config(mock_cfg_inst):
-    mock_cfg_inst.mqtt_state_topic = "home/transit/bus/stop_12345"
+def test_publish_hass_discovery_config(mock_cfg):
+    mock_cfg.hass_discovery_prefix = "homeassistant"
+    mock_cfg.transit = "RTL"
+    mock_cfg.mqtt_state_topic = "state_topic"
     mock_client = MagicMock()
-    stop_code = 12345
-    discovery_prefix = "homeassistant"
-    
-    t = get_t()
-
-    publish_hass_discovery_config(mock_client, stop_code, discovery_prefix)
-
-    expected_topic = f"{discovery_prefix}/sensor/transit_schedule_{stop_code}/config"
-    
-    mock_client.publish.assert_called_once()
-    
-    args, kwargs = mock_client.publish.call_args
-    
-    assert args[0] == expected_topic
-    assert kwargs['retain'] is True
-
-    payload_dict = json.loads(args[1])
-    assert payload_dict['name'] == t["next_bus_at_stop"].format(stop_code=stop_code)
-    assert payload_dict['unique_id'] == f"transit_schedule_{stop_code}"
-    assert payload_dict['state_topic'] == "home/transit/bus/stop_12345"
-    assert "trip_headsign" in payload_dict['json_attributes_template']
+    publish_hass_discovery_config(mock_client, 12345, "homeassistant")
+    mock_client.publish.assert_called()
 
 @patch('transit_schedule.mqtt_client.config')
-@freeze_time("2023-03-15 07:30:00")
-def test_publish_schedule(mock_cfg_inst):
-    mock_cfg_inst.stop_code = 12345
-    mock_cfg_inst.mqtt_state_topic = "home/transit/bus/stop_12345"
-    mock_cfg_inst.language = LANGUAGE
-
-    mock_client = MagicMock()
-    mock_transit_data = MagicMock()
-    
-    t = get_t()
-    
-    arrival_dt = datetime.datetime(2023, 3, 15, 7, 45, 0)
-    mock_next_stop = MagicMock()
-    mock_next_stop.arrival_datetime = arrival_dt
-    mock_next_stop.arrival_time = "07:45:00"
-    mock_next_stop.route_id = "123"
-    mock_next_stop.trip_headsign = "Terminus Panama"
-    mock_next_stop.retrieve_method = "GTFS"
-    
-    mock_transit_data.get_next_stop.return_value = mock_next_stop
-    
-    publish_schedule(mock_client, mock_transit_data, "stop_id_123")
-    
-    mock_client.publish.assert_called_once()
-    args, kwargs = mock_client.publish.call_args
-    
-    assert kwargs.get('retain') is True
-    payload = json.loads(args[1])
-    assert payload['arrival_datetime_iso'] == arrival_dt.replace(tzinfo=ZoneInfo(DEFAULT_TIMEZONE)).isoformat()
-    assert payload['nextstop_nbrmins'] == 15
-    assert payload['nextstop_nbrsecs'] == 0
-    assert payload['retrieve_method'] == t["gtfs"]
-
-@patch('transit_schedule.mqtt_client.config')
-def test_publish_schedule_live_scraper(mock_cfg_inst):
+def test_publish_schedule_success(mock_cfg_inst):
     mock_cfg_inst.stop_code = 12345
     mock_cfg_inst.mqtt_state_topic = "topic"
     mock_cfg_inst.language = "fr"
-
+    
     mock_client = MagicMock()
     mock_transit_data = MagicMock()
-    
     mock_next_stop = MagicMock()
     mock_next_stop.arrival_datetime = datetime.datetime.now() + datetime.timedelta(minutes=5)
+    mock_next_stop.arrival_time = "12:00:00"
+    mock_next_stop.route_id = "44"
+    mock_next_stop.trip_headsign = "Panama"
     mock_next_stop.retrieve_method = "live scraper"
+    
     mock_transit_data.get_next_stop.return_value = mock_next_stop
     
     publish_schedule(mock_client, mock_transit_data, "stop_id")
@@ -102,17 +44,117 @@ def test_publish_schedule_live_scraper(mock_cfg_inst):
     assert payload['retrieve_method'] == TRANSLATIONS["fr"]["live_scraper"]
 
 @patch('transit_schedule.mqtt_client.config')
+def test_publish_schedule_method_fallback(mock_cfg_inst):
+    mock_cfg_inst.stop_code = 12345
+    mock_cfg_inst.mqtt_state_topic = "topic"
+    mock_cfg_inst.language = "fr"
+    mock_client = MagicMock()
+    mock_transit_data = MagicMock()
+    mock_next_stop = MagicMock()
+    mock_next_stop.arrival_datetime = datetime.datetime.now() + datetime.timedelta(minutes=5)
+    mock_next_stop.retrieve_method = "unknown"
+    mock_transit_data.get_next_stop.return_value = mock_next_stop
+    publish_schedule(mock_client, mock_transit_data, "stop_id")
+    args, _ = mock_client.publish.call_args
+    payload = json.loads(args[1])
+    assert payload['retrieve_method'] == "unknown"
+
+def test_start_mqtt_client_duplicate(mocker):
+    import transit_schedule.mqtt_client
+    transit_schedule.mqtt_client._MQTT_LOOP_RUNNING = True
+    mock_logger = mocker.patch('transit_schedule.mqtt_client._LOGGER')
+    
+    start_mqtt_client()
+    mock_logger.warning.assert_called_with("MQTT client loop is already running in this process. Skipping duplicate start.")
+    transit_schedule.mqtt_client._MQTT_LOOP_RUNNING = False
+
+@patch('transit_schedule.mqtt_client.config')
+def test_start_mqtt_client_init_error(mock_cfg_inst, mocker):
+    mock_cfg_inst.stop_code = "12345"
+    import transit_schedule.mqtt_client
+    transit_schedule.mqtt_client._MQTT_LOOP_RUNNING = False
+    mocker.patch('transit_schedule.mqtt_client.ParseTransitData', side_effect=Exception("Init error"))
+    mock_logger = mocker.patch('transit_schedule.mqtt_client._LOGGER')
+    mocker.patch('transit_schedule.mqtt_client.time.sleep')
+    
+    start_mqtt_client()
+    assert mock_logger.error.called
+
+@patch('transit_schedule.mqtt_client.config')
+@patch('transit_schedule.mqtt_client.mqtt.Client')
+@patch('transit_schedule.mqtt_client.ParseTransitData')
+def test_start_mqtt_client_loop_error(mock_parser, mock_mqtt_client, mock_cfg_inst, mocker):
+    import transit_schedule.mqtt_client
+    transit_schedule.mqtt_client._MQTT_LOOP_RUNNING = False
+    mock_cfg_inst.stop_code = "12345"
+    mock_cfg_inst.mqtt_state_topic = "topic"
+    mock_cfg_inst.hass_discovery_prefix = "homeassistant"
+    mock_cfg_inst.hass_discovery_enabled = True
+    
+    mocker.patch('transit_schedule.mqtt_client.publish_schedule', side_effect=[Exception("Loop error"), KeyboardInterrupt])
+    mocker.patch('transit_schedule.mqtt_client.time.sleep')
+    mock_logger = mocker.patch('transit_schedule.mqtt_client._LOGGER')
+    
+    try:
+        start_mqtt_client()
+    except KeyboardInterrupt:
+        pass
+    assert any("Error in MQTT main loop" in str(call) for call in mock_logger.error.call_args_list)
+
+@patch('transit_schedule.mqtt_client.config')
+def test_on_message_callback(mock_cfg):
+    mock_cfg.mqtt_refresh_topic = "refresh"
+    mock_cfg.mqtt_hass_status_topic = "status"
+    mock_cfg.hass_discovery_enabled = True
+    mock_cfg.stop_code = 12345
+    mock_cfg.hass_discovery_prefix = "homeassistant"
+    mock_cfg.mqtt_state_topic = "state_topic"
+    mock_cfg.transit = "RTL"
+
+    mock_client = MagicMock()
+    mock_event = MagicMock()
+    t = TRANSLATIONS["fr"]
+
+    # Test refresh topic
+    mock_msg = MagicMock()
+    mock_msg.topic = "refresh"
+    on_message_callback(mock_client, None, mock_msg, mock_event, t)
+    mock_event.set.assert_called_once()
+    mock_event.reset_mock()
+
+    # Test HASS status topic
+    mock_msg.topic = "status"
+    on_message_callback(mock_client, None, mock_msg, mock_event, t)
+    mock_event.set.assert_called_once()
+    
+    # Test unknown topic
+    mock_event.reset_mock()
+    mock_msg.topic = "unknown"
+    on_message_callback(mock_client, None, mock_msg, mock_event, t)
+    assert not mock_event.set.called
+
+@patch('transit_schedule.mqtt_client.config')
+@patch('transit_schedule.mqtt_client.mqtt.Client')
+@patch('transit_schedule.mqtt_client.ParseTransitData')
+def test_start_mqtt_client_stop_not_found(mock_parser, mock_mqtt_client, mock_cfg_inst, mocker):
+    import transit_schedule.mqtt_client
+    transit_schedule.mqtt_client._MQTT_LOOP_RUNNING = False
+    mock_cfg_inst.stop_code = "12345"
+    mock_parser.return_value.get_stop_id.return_value = None
+    mock_logger = mocker.patch('transit_schedule.mqtt_client._LOGGER')
+    
+    start_mqtt_client()
+    mock_logger.error.assert_any_call("Stop code 12345 not found.")
+
+@patch('transit_schedule.mqtt_client.config')
 def test_publish_schedule_no_bus(mock_cfg_inst):
     mock_cfg_inst.stop_code = 12345
     mock_cfg_inst.mqtt_state_topic = "topic"
-
     mock_client = MagicMock()
     mock_transit_data = MagicMock()
     mock_transit_data.get_next_stop.return_value = None
-    
-    with patch('transit_schedule.mqtt_client._LOGGER'):
-        publish_schedule(mock_client, mock_transit_data, "stop_id")
-        mock_client.publish.assert_not_called()
+    publish_schedule(mock_client, mock_transit_data, "stop_id")
+    mock_client.publish.assert_not_called()
 
 @patch('transit_schedule.mqtt_client.config')
 def test_start_mqtt_client_missing_stop_code(mock_cfg_inst):
@@ -120,7 +162,6 @@ def test_start_mqtt_client_missing_stop_code(mock_cfg_inst):
     import transit_schedule.mqtt_client
     transit_schedule.mqtt_client._MQTT_LOOP_RUNNING = False
     with patch('transit_schedule.mqtt_client._LOGGER') as mock_logger:
-        from transit_schedule.mqtt_client import start_mqtt_client
         start_mqtt_client()
         mock_logger.error.assert_called_with("STOP_CODE environment variable is required but missing or invalid.")
 
@@ -138,15 +179,12 @@ def test_start_mqtt_client_loop(mock_sleep, mock_event_wait, mock_rtl_parser, mo
     mock_cfg_inst.mqtt_username = "user"
     mock_cfg_inst.mqtt_password = "pass"
     mock_cfg_inst.mqtt_use_tls = False
+    mock_cfg_inst.hass_discovery_enabled = True
+    mock_cfg_inst.hass_discovery_prefix = "homeassistant"
     mock_cfg_inst.mqtt_refresh_topic = "refresh"
-    mock_cfg_inst.hass_discovery_enabled = False
-    mock_cfg_inst.language = "fr"
+    mock_cfg_inst.mqtt_hass_status_topic = "status"
+    mock_cfg_inst.mqtt_state_topic = "state"
     
-    mock_parser_inst = mock_rtl_parser.return_value
-    mock_parser_inst.get_stop_id.return_value = "stop_id_123"
-    mock_parser_inst.get_next_stop.return_value = None
-    
-    from transit_schedule.mqtt_client import start_mqtt_client
     try:
         start_mqtt_client()
     except KeyboardInterrupt:

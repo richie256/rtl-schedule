@@ -10,7 +10,13 @@ from transit_schedule.const import _LOGGER
 
 def create_app(transit_data=None):
     if transit_data is None:
-        transit_data = data_parser.ParseTransitData()
+        try:
+            transit_data = data_parser.ParseTransitData()
+        except Exception as e:
+            _LOGGER.exception(e)
+            # In case of initialization error, we still want to be able to start the server
+            # to serve health checks, even if other endpoints fail.
+            transit_data = None
     app = Flask(__name__)
 
     if __name__ != '__main__':
@@ -28,6 +34,8 @@ def create_app(transit_data=None):
 
     @app.route("/transit-schedule/nextstop/<int:stop_code>", methods=['GET'])
     def get_next_stop(stop_code: int):
+        if transit_data is None:
+            return jsonify({"error": "Transit data not initialized"}), 500
         if stop_code <= 0:
             return jsonify({"error": "Stop code must be a positive integer"}), 400
         stop_id = transit_data.get_stop_id(stop_code)
