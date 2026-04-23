@@ -264,7 +264,6 @@ class HastusScraper:
 
     def _fetch_and_cache(self, params, date, cache_key):
         """Fetch data from network and populate cache."""
-        # Step 1: Fetch landing page to discover service periods (different 't' values)
         landing_params = {
             "q": "stops_stoptimes",
             "p": params['stop'],
@@ -275,7 +274,7 @@ class HastusScraper:
         }
         
         try:
-            _LOGGER.info(f"Fetching landing page to discover service periods for {params['ligne']}")
+            _LOGGER.info(f"Discovering schedule links for {params['ligne']} at stop {params['stop']}")
             landing_res = self.session.get(self.BASE_URL, params=landing_params, timeout=15)
             soup = BeautifulSoup(landing_res.text, 'html.parser')
             links = soup.find_all('a', href=re.compile(r'q=stops_stoptimes'))
@@ -284,50 +283,13 @@ class HastusScraper:
             week_start = date - datetime.timedelta(days=date.weekday())
             week_end = week_start + datetime.timedelta(days=6)
             
-            # Step 2: Fetch each schedule period found
             found_any = False
+            _LOGGER.info(f"Found {len(links)} candidate links on landing page.")
+            
             for link in links:
                 href = link.get('href')
                 text = link.get_text(strip=True).lower()
                 
-                # We only want regular schedule links
-                if "regulier" not in href and "t=" not in href and "regulier" not in text:
-                    continue
-                
-                # Determine the target date for this specific link
-                link_date = None
-                # Support both YYYYMMDD (8 digits) and Unix timestamps (10 digits)
-                t_match = re.search(r'[&?]t=(\d{8,10})', href)
-                if t_match:
-                    val = t_match.group(1)
-                    try:
-                        if len(val) == 8:
-                            link_date = datetime.datetime.strptime(val, '%Y%m%d').date()
-                        elif len(val) == 10:
-                            link_date = datetime.datetime.fromtimestamp(int(val)).date()
-                    except (ValueError, OSError):
-                        pass
-                
-                # STRICT FILTER: Only follow links for the current target week
-                # This prevents historical/irrelevant Saturday/Sunday links from poisoning the cache.
-                if link_date and (link_date < week_start or link_date > week_end):
-                    _LOGGER.info(f"Ignoring irrelevant schedule link for {link_date} (outside current week {week_start} to {week_end})")
-                    continue
-
-                if not link_date:
-                    # Fallback to text inference if no date in URL
-                    # For range links like "du lundi... au dimanche", prioritize "semaine"
-                    if ('semaine' in text or 'lundi' in text) and 'au' in text:
-                        link_date = week_start
-                    elif 'samedi' in text:
-                        link_date = week_start + datetime.timedelta(days=5)
-                    elif 'dimanche' in text:
-                        link_date = week_start + datetime.timedelta(days=6)
-                    elif 'semaine' in text or 'lundi' in text:
-                        link_date = week_start # Monday
-                    else:
-                        link_date = date
-
                 # Extract full URL
                 if href.startswith('/'):
                     url = f"https://madprep_i.rtl-longueuil.qc.ca{href}"
@@ -336,24 +298,73 @@ class HastusScraper:
                 else:
                     url = href if "://" in href else f"https://madprep_i.rtl-longueuil.qc.ca/{href}"
 
-                _LOGGER.info(f"Fetching schedule period from: {url} (Inferred date: {link_date}, text: '{text}')")
+                # Link Classification Logic
+                link_date = None
+                
+                # 1. Trust 'j' parameter (Jour: 1-5 Weekday, 6 Sat, 7 Sun)
+                j_match = re.search(r'[&?]j=(\d)', url)
+                if j_match:
+                    j_val = int(j_match.group(1))
+                    if j_val <= 5:
+                        link_date = week_start
+                    elif j_val == 6:
+                        link_date = week_start + datetime.timedelta(days=5)
+                    elif j_val == 7:
+                        link_date = week_start + datetime.timedelta(days=6)
+                    _LOGGER.debug(f"Link categorization from j={j_val}: {link_date}")
+
+                # 2. Trust timestamp 't' if 'j' is missing
+                if not link_date:
+                    t_match = re.search(r'[&?]t=(\d+)', url)
+                    if t_match:
+                        val = t_match.group(1)
+                        try:
+                            if len(val) == 8:
+                                link_date = datetime.datetime.strptime(val, '%Y%m%d').date()
+                            elif len(val) >= 10:
+                                import zoneinfo
+                                mtl_tz = zoneinfo.ZoneInfo("America/Montreal")
+                                link_date = datetime.datetime.fromtimestamp(int(val[:10]), tz=mtl_tz).date()
+                        except (ValueError, OSError):
+                            pass
+                        _LOGGER.debug(f"Link categorization from t={val}: {link_date}")
+
+                # 3. Fallback to text
+                if not link_date:
+                    if ('semaine' in text or 'lundi' in text) and 'au' in text:
+                        link_date = week_start
+                    elif 'samedi' in text:
+                        link_date = week_start + datetime.timedelta(days=5)
+                    elif 'dimanche' in text:
+                        link_date = week_start + datetime.timedelta(days=6)
+                    elif 'semaine' in text or 'lundi' in text:
+                        link_date = week_start
+                    else:
+                        link_date = date
+                    _LOGGER.debug(f"Link categorization from text '{text}': {link_date}")
+
+                # Strict Filter: Only follow links for the current week
+                if link_date and (link_date < week_start or link_date > week_end):
+                    _LOGGER.info(f"Skipping link outside target week: {link_date} (Link: '{text}')")
+                    continue
+
+                _LOGGER.info(f"Fetching: {text} | Inferred Date: {link_date}")
                 response = self.session.get(url, timeout=15)
                 found_any = True
                 
                 try:
                     json_data = response.json()
                     if isinstance(json_data, dict) and 'data' in json_data:
-                        _LOGGER.info(f"Successfully fetched JSON schedule for {link_date}")
                         period_data = self._parse_json_weekly_schedule(json_data, params['stop'], params['pattern'], link_date)
                         for cat in combined_weekly_data:
                             combined_weekly_data[cat].extend(period_data[cat])
                     else:
-                        _LOGGER.warning(f"Response from {url} was not expected JSON format")
+                        _LOGGER.warning(f"Response from {url[:50]}... was not valid JSON data")
                 except ValueError:
-                    _LOGGER.warning(f"Failed to parse JSON from service period link: {url}")
+                    _LOGGER.warning(f"Failed to parse JSON for {text}")
 
             if not found_any:
-                _LOGGER.warning("No service period links found on landing page")
+                _LOGGER.warning("No valid schedule links found.")
 
             # Deduplicate and sort
             for cat in combined_weekly_data:
@@ -370,6 +381,7 @@ class HastusScraper:
     def _parse_json_weekly_schedule(self, json_data: dict, stop_id: str, pattern_id: str, target_date: datetime.date) -> dict[str, list[datetime.time]]:
         """Parse the new JSON format into weekly categories, filtering by stop and pattern."""
         weekly_data = {'semaine': [], 'samedi': [], 'dimanche': []}
+        counts = {'semaine': 0, 'samedi': 0, 'dimanche': 0}
 
         data_entries = json_data.get('data', [])
         if not data_entries:
@@ -378,36 +390,26 @@ class HastusScraper:
         # The JSON might contain multiple stops/patterns if the URL didn't filter strictly enough
         for entry in data_entries:
             # Check if this entry matches our requested stop and pattern
-            # The 'id' field in JSON is often 'pattern_id:index' (e.g. '15:44:1:01')
-            # We use a more lenient matching for pattern_id to avoid missing data
             if entry.get('stopid') != stop_id:
                 continue
             
             entry_id = entry.get('id', '')
             # Use colon-wrapped matching to ensure we match whole tokens (e.g. :44: doesn't match :144:)
             if pattern_id:
-                # Add colons to both sides to bound the tokens
                 wrapped_id = f":{entry_id}:"
                 wrapped_pattern = f":{pattern_id}:"
-                
-                # Check if the pattern is a sequence of tokens within the ID
                 if wrapped_pattern not in wrapped_id:
-                    # Also try matching without leading/trailing colons in case pattern_id is the full ID 
-                    # or if the ID format is slightly different than expected
                     if pattern_id != entry_id and not entry_id.startswith(f"{pattern_id}:") and not entry_id.endswith(f":{pattern_id}"):
-                        _LOGGER.debug(f"Skipping entry {entry_id} as it doesn't match pattern {pattern_id}")
                         continue
 
             arrival_seconds = entry.get('scheduledarrival')
             if arrival_seconds is None:
                 continue
 
-            # Convert seconds since midnight to time
             try:
                 h, m = divmod(arrival_seconds // 60, 60)
                 t = datetime.time(h % 24, m)
             except (ValueError, OverflowError):
-                _LOGGER.error(f"Invalid arrival seconds: {arrival_seconds}")
                 continue
 
             # Identify which day this belongs to
@@ -416,7 +418,6 @@ class HastusScraper:
                 try:
                     entry_date = datetime.datetime.fromisoformat(date_str.replace('Z', '+00:00')).date()
                 except ValueError:
-                    _LOGGER.error(f"Failed to parse date string in JSON: {date_str}")
                     entry_date = target_date
             else:
                 entry_date = target_date
@@ -424,16 +425,20 @@ class HastusScraper:
             # If the time is >= 24:00, it actually belongs to the NEXT day's schedule category
             if h >= 24:
                 entry_date += datetime.timedelta(days=1)
-                _LOGGER.debug(f"Shifting late-night bus ({h}:{m:02d}) to next day: {entry_date}")
 
             weekday = entry_date.weekday()
             if weekday < 5:
                 weekly_data['semaine'].append(t)
+                counts['semaine'] += 1
             elif weekday == 5:
                 weekly_data['samedi'].append(t)
+                counts['samedi'] += 1
             else:
                 weekly_data['dimanche'].append(t)
+                counts['dimanche'] += 1
 
+        _LOGGER.info(f"JSON Parse Summary for {target_date}: {counts}")
+        
         # Deduplicate and sort
         for cat in weekly_data:
             weekly_data[cat] = sorted(set(weekly_data[cat]))
