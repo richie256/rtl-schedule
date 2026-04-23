@@ -16,8 +16,7 @@ from transit_schedule.data_parser import ParseTransitData
 # Configure logging
 if not _LOGGER.handlers:
     logHandler = logging.StreamHandler()
-    # Include threadName to debug potential duplicate loops
-    formatter = jsonlogger.JsonFormatter("%(asctime)s %(levelname)s %(threadName)s %(message)s")
+    formatter = jsonlogger.JsonFormatter("%(message)s")
     logHandler.setFormatter(formatter)
     _LOGGER.addHandler(logHandler)
     _LOGGER.setLevel(logging.INFO)

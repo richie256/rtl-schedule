@@ -15,6 +15,7 @@ from transit_schedule.config import config
 from transit_schedule.const import TARGET_DIRECTION, TARGET_ROUTE, TRANSIT
 
 _LOGGER = logging.getLogger("transit-schedule")
+_LOGGER.propagate = False # Prevent double logging if parent has a handler
 
 class HostnameIgnoreAdapter(HTTPAdapter):
     """
@@ -380,8 +381,8 @@ class HastusScraper:
             import traceback
             _LOGGER.error(traceback.format_exc())
 
-    def _parse_json_weekly_schedule(self, json_data: dict, stop_id: str, pattern_id: str, target_date: datetime.date) -> dict[str, list[datetime.time]]:
-        """Parse the new JSON format into weekly categories with strict isolation."""
+    def _parse_json_weekly_schedule(self, json_data: dict, stop_id: str, pattern_id: str, target_date: datetime.date, is_day_specific: bool = False) -> dict[str, list[datetime.time]]:
+        """Parse the new JSON format into weekly categories with strict trip-type detection."""
         weekly_data = {'semaine': [], 'samedi': [], 'dimanche': []}
         counts = {'semaine': 0, 'samedi': 0, 'dimanche': 0}
 
@@ -391,20 +392,19 @@ class HastusScraper:
             return weekly_data
             
         # EXTRA TROUBLESHOOTING: Dump the first entry to see the actual structure from RTL
-        _LOGGER.info(f"Parsing {len(data_entries)} entries for target date {target_date}. SAMPLE ENTRY: {data_entries[0]}")
+        _LOGGER.info(f"Parsing {len(data_entries)} entries for target date {target_date} (Specific: {is_day_specific}). SAMPLE: {data_entries[0]}")
 
         # Determine the "Intended Category" of the link we followed
         target_wd = target_date.weekday()
         intended_cat = 'semaine' if target_wd < 5 else ('samedi' if target_wd == 5 else 'dimanche')
 
-        # The JSON might contain multiple stops/patterns if the URL didn't filter strictly enough
         for entry in data_entries:
-            # Check if this entry matches our requested stop and pattern
+            # Check stop match
             if entry.get('stopid') != stop_id:
                 continue
             
+            # Check pattern match
             entry_id = entry.get('id', '')
-            # Use colon-wrapped matching to ensure we match whole tokens (e.g. :44: doesn't match :144:)
             if pattern_id:
                 wrapped_id = f":{entry_id}:"
                 wrapped_pattern = f":{pattern_id}:"
@@ -422,38 +422,47 @@ class HastusScraper:
             except (ValueError, OverflowError):
                 continue
 
-            # Identify which day this belongs to
-            date_str = entry.get('date')
-            if date_str:
-                try:
-                    # Handle both '2026-04-23' and full ISO '2026-04-23T00:00:00Z'
-                    base_date = date_str.split('T')[0]
-                    entry_date = datetime.date.fromisoformat(base_date)
-                except ValueError:
-                    entry_date = target_date
-            else:
-                # No date in entry? We MUST trust the link's intended date
-                entry_date = target_date
-
-            # If the time is >= 24:00, it actually belongs to the NEXT day's schedule category
-            if h >= 24:
-                entry_date += datetime.timedelta(days=1)
-
-            # Determine category based on the resolved date
-            wd = entry_date.weekday()
-            cat = 'semaine' if wd < 5 else ('samedi' if wd == 5 else 'dimanche')
+            # IDENTIFY THE DAY TYPE
+            # 1. Check trip ID for explicit markers (Most reliable for RTL)
+            trip_id = entry.get('id_trip', '')
+            entry_cat = None
+            if '_SE_' in trip_id:
+                entry_cat = 'semaine'
+            elif '_SA_' in trip_id:
+                entry_cat = 'samedi'
+            elif '_DI_' in trip_id:
+                entry_cat = 'dimanche'
             
-            # STRICT ISOLATION SAFETY FILTER: 
-            # If the entry has NO date, we confine it strictly to the link's intended category.
-            # This prevents a Sunday link from populating the Weekday cache if it lacks dates.
-            if not date_str and cat != intended_cat:
-                _LOGGER.debug(f"Entry category {cat} mismatch with intended {intended_cat} for dateless entry. Forcing to {intended_cat}.")
-                cat = intended_cat
+            # 2. Use date field if no trip marker found
+            if not entry_cat:
+                date_str = entry.get('date')
+                if date_str:
+                    try:
+                        base_date = date_str.split('T')[0]
+                        entry_date = datetime.date.fromisoformat(base_date)
+                        # If time >= 24:00, it's actually the next day
+                        if h >= 24:
+                            entry_date += datetime.timedelta(days=1)
+                        wd = entry_date.weekday()
+                        entry_cat = 'semaine' if wd < 5 else ('samedi' if wd == 5 else 'dimanche')
+                    except ValueError:
+                        pass
 
-            weekly_data[cat].append(t)
-            counts[cat] += 1
+            # 3. Fallback to intended category (Trust the link)
+            if not entry_cat:
+                entry_cat = intended_cat
 
-        _LOGGER.info(f"Link Result Summary ({target_date}): {counts}")
+            # FINAL PROTECTION: If we followed a DAY-SPECIFIC link, we strictly confine
+            # the data to that category, ignoring conflicting labels.
+            if is_day_specific:
+                if entry_cat != intended_cat:
+                    _LOGGER.debug(f"Overriding entry cat '{entry_cat}' -> '{intended_cat}' (Strict link intent)")
+                entry_cat = intended_cat
+
+            weekly_data[entry_cat].append(t)
+            counts[entry_cat] += 1
+
+        _LOGGER.info(f"Link Classification Summary ({target_date}): {counts}")
         
         # Deduplicate and sort
         for cat in weekly_data:
