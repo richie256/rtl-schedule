@@ -322,6 +322,7 @@ class HastusScraper:
                             if len(val) == 8:
                                 link_date = datetime.datetime.strptime(val, '%Y%m%d').date()
                             elif len(val) >= 10:
+                                # Import inline or use global
                                 import zoneinfo
                                 mtl_tz = zoneinfo.ZoneInfo("America/Montreal")
                                 link_date = datetime.datetime.fromtimestamp(int(val[:10]), tz=mtl_tz).date()
@@ -329,8 +330,9 @@ class HastusScraper:
                             pass
                         _LOGGER.debug(f"Link categorization from t={val}: {link_date}")
 
-                # 3. Fallback to text
+                # 3. Fallback to text (Strictly avoiding "lundi" matching range links)
                 if not link_date:
+                    # For range links like "du lundi... au dimanche", prioritize "semaine"
                     if ('semaine' in text or 'lundi' in text) and 'au' in text:
                         link_date = week_start
                     elif 'samedi' in text:
@@ -348,7 +350,7 @@ class HastusScraper:
                     _LOGGER.info(f"Skipping link outside target week: {link_date} (Link: '{text}')")
                     continue
 
-                _LOGGER.info(f"Fetching: {text} | Inferred Date: {link_date}")
+                _LOGGER.info(f"Fetching schedule: {text} | Inferred Date: {link_date}")
                 response = self.session.get(url, timeout=15)
                 found_any = True
                 
@@ -379,13 +381,21 @@ class HastusScraper:
             _LOGGER.error(traceback.format_exc())
 
     def _parse_json_weekly_schedule(self, json_data: dict, stop_id: str, pattern_id: str, target_date: datetime.date) -> dict[str, list[datetime.time]]:
-        """Parse the new JSON format into weekly categories, filtering by stop and pattern."""
+        """Parse the new JSON format into weekly categories with strict isolation."""
         weekly_data = {'semaine': [], 'samedi': [], 'dimanche': []}
         counts = {'semaine': 0, 'samedi': 0, 'dimanche': 0}
 
         data_entries = json_data.get('data', [])
         if not data_entries:
             _LOGGER.warning(f"No data entries in JSON response for stop {stop_id}, pattern {pattern_id}")
+            return weekly_data
+            
+        # EXTRA TROUBLESHOOTING: Dump the first entry to see the actual structure from RTL
+        _LOGGER.info(f"Parsing {len(data_entries)} entries for target date {target_date}. SAMPLE ENTRY: {data_entries[0]}")
+
+        # Determine the "Intended Category" of the link we followed
+        target_wd = target_date.weekday()
+        intended_cat = 'semaine' if target_wd < 5 else ('samedi' if target_wd == 5 else 'dimanche')
 
         # The JSON might contain multiple stops/patterns if the URL didn't filter strictly enough
         for entry in data_entries:
@@ -416,28 +426,34 @@ class HastusScraper:
             date_str = entry.get('date')
             if date_str:
                 try:
-                    entry_date = datetime.datetime.fromisoformat(date_str.replace('Z', '+00:00')).date()
+                    # Handle both '2026-04-23' and full ISO '2026-04-23T00:00:00Z'
+                    base_date = date_str.split('T')[0]
+                    entry_date = datetime.date.fromisoformat(base_date)
                 except ValueError:
                     entry_date = target_date
             else:
+                # No date in entry? We MUST trust the link's intended date
                 entry_date = target_date
 
             # If the time is >= 24:00, it actually belongs to the NEXT day's schedule category
             if h >= 24:
                 entry_date += datetime.timedelta(days=1)
 
-            weekday = entry_date.weekday()
-            if weekday < 5:
-                weekly_data['semaine'].append(t)
-                counts['semaine'] += 1
-            elif weekday == 5:
-                weekly_data['samedi'].append(t)
-                counts['samedi'] += 1
-            else:
-                weekly_data['dimanche'].append(t)
-                counts['dimanche'] += 1
+            # Determine category based on the resolved date
+            wd = entry_date.weekday()
+            cat = 'semaine' if wd < 5 else ('samedi' if wd == 5 else 'dimanche')
+            
+            # STRICT ISOLATION SAFETY FILTER: 
+            # If the entry has NO date, we confine it strictly to the link's intended category.
+            # This prevents a Sunday link from populating the Weekday cache if it lacks dates.
+            if not date_str and cat != intended_cat:
+                _LOGGER.debug(f"Entry category {cat} mismatch with intended {intended_cat} for dateless entry. Forcing to {intended_cat}.")
+                cat = intended_cat
 
-        _LOGGER.info(f"JSON Parse Summary for {target_date}: {counts}")
+            weekly_data[cat].append(t)
+            counts[cat] += 1
+
+        _LOGGER.info(f"Link Result Summary ({target_date}): {counts}")
         
         # Deduplicate and sort
         for cat in weekly_data:
