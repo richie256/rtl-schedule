@@ -562,39 +562,42 @@ class HastusScraper:
 
         return weekly_data
 
-    def get_schedule(self, stop_id: int, date: datetime.date, feed_id: int = 15) -> list[dict[str, Any]]:
+    def get_schedule(self, stop_id: int, date: datetime.date, feed_id: int = 15, target_route: str | None = None, target_direction: str | None = None) -> list[dict[str, Any]]:
         """Smart fallback: discovers patterns for the stop and fetches all schedules."""
         if TRANSIT != "RTL":
             _LOGGER.debug(f"Live scraper not available for {TRANSIT}")
             return []
-            
+
         stop_code = self.get_stop_code_from_id(stop_id)
         if not stop_code:
             _LOGGER.error(f"Could not map internal stop_id {stop_id} to a stop code.")
             return []
-            
+
         _LOGGER.info(f"Fallback: Discovered stop code {stop_code} for ID {stop_id}")
         patterns = self.get_stop_patterns(stop_code, stop_id=stop_id)
-        
+
         if not patterns:
             _LOGGER.warning(f"No patterns found for stop code {stop_code}")
             return []
-            
+
         all_arrivals = []
+        # Use provided target_route/direction or fall back to global constants
+        route_filter = target_route if target_route is not None else TARGET_ROUTE
+        direction_filter = target_direction if target_direction is not None else TARGET_DIRECTION
+
         # Filter for target direction if requested
         for p in patterns:
             # Extract route number from ligne string (e.g. " 44 Direction Terminus Panama" -> "44")
             route_match = re.search(r'(\d+)', p['ligne'])
             route_id = route_match.group(1) if route_match else "0"
 
-            if TARGET_ROUTE and TARGET_ROUTE != route_id:
-                _LOGGER.debug(f"Skipping pattern {p['ligne']} (route {route_id} != {TARGET_ROUTE})")
+            if route_filter and str(route_filter) != route_id:
+                _LOGGER.debug(f"Skipping pattern {p['ligne']} (route {route_id} != {route_filter})")
                 continue
 
-            if TARGET_DIRECTION and TARGET_DIRECTION not in p['ligne']:
-                _LOGGER.debug(f"Skipping pattern {p['ligne']} (not {TARGET_DIRECTION})")
+            if direction_filter and direction_filter not in p['ligne']:
+                _LOGGER.debug(f"Skipping pattern {p['ligne']} (not {direction_filter})")
                 continue
-                
             arrivals = self.get_schedule_by_params(p, date)
             
             for a_dt in arrivals:

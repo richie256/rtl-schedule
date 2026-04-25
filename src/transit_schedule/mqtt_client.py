@@ -30,23 +30,34 @@ def get_translation():
     lang = config.language if config.language in TRANSLATIONS else "fr"
     return TRANSLATIONS[lang]
 
-def publish_hass_discovery_config(client, stop_code, discovery_prefix):
+def publish_hass_discovery_config(client, stop_config, discovery_prefix):
     """Publishes the Home Assistant discovery configuration for the bus stop sensor."""
-    object_id = f"transit_schedule_{stop_code}"
+    stop_code = stop_config['stop_code']
+    route_id = stop_config.get('route_id')
+    
+    unique_id_parts = ["transit_schedule", str(stop_code)]
+    if route_id:
+        unique_id_parts.append(str(route_id))
+    
+    object_id = "_".join(unique_id_parts)
     discovery_topic = f"{discovery_prefix}/sensor/{object_id}/config"
-    state_topic = config.mqtt_state_topic
+    state_topic = config.get_mqtt_state_topic(stop_config)
     
     t = get_translation()
 
+    name = t["next_bus_at_stop"].format(stop_code=stop_code)
+    if route_id:
+        name += f" ({route_id})"
+
     payload = {
-        "name": t["next_bus_at_stop"].format(stop_code=stop_code),
+        "name": name,
         "state_topic": state_topic,
         "value_template": "{{ value_json.arrival_datetime_iso }}",
         "json_attributes_topic": state_topic,
         "unique_id": object_id,
         "icon": "mdi:bus-clock",
         "device_class": "timestamp",
-        "json_attributes_template": "{{ {'trip_headsign': value_json.trip_headsign} | tojson }}",
+        "json_attributes_template": "{{ {'trip_headsign': value_json.trip_headsign, 'route_id': value_json.route_id, 'stop_code': value_json.stop_code} | tojson }}",
         "device": {
             "identifiers": ["transit_schedule"],
             "name": t["transit_schedule"],
@@ -57,10 +68,20 @@ def publish_hass_discovery_config(client, stop_code, discovery_prefix):
     client.publish(discovery_topic, json.dumps(payload), retain=True)
     _LOGGER.info("Published Home Assistant discovery configuration", extra={"topic": discovery_topic, "payload": payload})
 
-def publish_schedule(client, transit_data, stop_id):
+def publish_schedule(client, transit_data, stop_id, stop_config):
     """Fetches and publishes the next bus stop information."""
     current_datetime = datetime.datetime.now().replace(microsecond=0)
-    next_stop_row = transit_data.get_next_stop(stop_id, current_datetime, stop_code=config.stop_code)
+    stop_code = stop_config['stop_code']
+    target_route = stop_config.get('route_id')
+    target_direction = stop_config.get('direction')
+
+    next_stop_row = transit_data.get_next_stop(
+        stop_id, 
+        current_datetime, 
+        stop_code=stop_code,
+        target_route=target_route,
+        target_direction=target_direction
+    )
     
     t = get_translation()
 
@@ -85,15 +106,15 @@ def publish_schedule(client, transit_data, stop_id):
             'arrival_datetime_iso': next_stop_row.arrival_datetime.replace(tzinfo=ZoneInfo(DEFAULT_TIMEZONE)).isoformat(),
             'trip_headsign': str(next_stop_row.trip_headsign),
             'current_time': str(current_datetime.time()),
-            'stop_code': config.stop_code,
+            'stop_code': stop_code,
             'retrieve_method': localized_method
         }
-        topic = config.mqtt_state_topic
+        topic = config.get_mqtt_state_topic(stop_config)
         client.publish(topic, json.dumps(payload), retain=True)
         _LOGGER.info(f"Published to MQTT topic '{topic}'", extra={"topic": topic, "payload": payload})
         return next_stop_row.arrival_datetime
     else:
-        _LOGGER.info(t["no_more_buses"])
+        _LOGGER.info(f"{t['no_more_buses']} for stop {stop_code}")
         return None
 
 def on_message_callback(client, userdata, msg, refresh_event, t):
@@ -104,7 +125,8 @@ def on_message_callback(client, userdata, msg, refresh_event, t):
     elif msg.topic == config.mqtt_hass_status_topic:
         _LOGGER.info(t["hass_status_received"])
         if config.hass_discovery_enabled:
-            publish_hass_discovery_config(client, config.stop_code, config.hass_discovery_prefix)
+            for stop_config in config.stops:
+                publish_hass_discovery_config(client, stop_config, config.hass_discovery_prefix)
         refresh_event.set()
 
 def start_mqtt_client():
@@ -117,8 +139,8 @@ def start_mqtt_client():
             return
         _MQTT_LOOP_RUNNING = True
 
-    if config.stop_code is None:
-        _LOGGER.error("STOP_CODE environment variable is required but missing or invalid.")
+    if not config.stops:
+        _LOGGER.error("No stops configured. STOP_CODE or STOPS_CONFIG environment variable is required.")
         return
 
     try:
@@ -149,41 +171,46 @@ def start_mqtt_client():
     client.subscribe(config.mqtt_hass_status_topic)
     client.loop_start()
 
-    stop_id = transit_data.get_stop_id(config.stop_code)
-    if stop_id is None:
-        _LOGGER.error(f"Stop code {config.stop_code} not found.")
+    # Resolve stop IDs once
+    stop_configs_with_ids = []
+    for stop_config in config.stops:
+        stop_id = transit_data.get_stop_id(stop_config['stop_code'])
+        if stop_id is None:
+            _LOGGER.error(f"Stop code {stop_config['stop_code']} not found.")
+            continue
+        stop_configs_with_ids.append((stop_config, stop_id))
+
+    if not stop_configs_with_ids:
+        _LOGGER.error("No valid stops found. Exiting.")
         return
 
     if config.hass_discovery_enabled:
-        publish_hass_discovery_config(client, config.stop_code, config.hass_discovery_prefix)
+        for stop_config, _ in stop_configs_with_ids:
+            publish_hass_discovery_config(client, stop_config, config.hass_discovery_prefix)
 
     try:
         while True:
             try:
-                # Clear any events that happened during the previous refresh 
-                # to avoid immediate double-refreshes unless a new message arrives.
                 refresh_event.clear()
-
                 now = datetime.datetime.now()
-                next_arrival = publish_schedule(client, transit_data, stop_id)
+                earliest_next_arrival = None
+
+                for stop_config, stop_id in stop_configs_with_ids:
+                    next_arrival = publish_schedule(client, transit_data, stop_id, stop_config)
+                    if next_arrival:
+                        if earliest_next_arrival is None or next_arrival < earliest_next_arrival:
+                            earliest_next_arrival = next_arrival
                 
-                if next_arrival:
-                    # Wait until bus has passed + 10 seconds.
-                    # This ensures we refresh as soon as the current "next bus" is gone.
-                    seconds_to_wait = (next_arrival - now).total_seconds() + 10
-                    # If bus is already in the past or very soon, wait at least 30s before next check
-                    # to avoid tight loops if data hasn't updated yet.
+                if earliest_next_arrival:
+                    seconds_to_wait = (earliest_next_arrival - now).total_seconds() + 10
                     interval = max(seconds_to_wait, 30)
                 else:
-                    # No bus found, wait 1 hour
                     interval = 3600
                 
                 _LOGGER.info(t["waiting_for"].format(interval=int(interval)), extra={"interval": int(interval)})
                 
-                # Wait for timeout OR event, with periodic heartbeat updates
                 wait_until = time.time() + interval
                 while time.time() < wait_until:
-                    # Update heartbeat file for health check
                     try:
                         with open("/tmp/mqtt_heartbeat", "w") as f:
                             f.write(str(time.time()))
@@ -193,12 +220,8 @@ def start_mqtt_client():
                     remaining = wait_until - time.time()
                     if remaining <= 0:
                         break
-                        
-                    # Wait in chunks of 60s to keep heartbeat updated
                     if refresh_event.wait(timeout=min(remaining, 60)):
                         _LOGGER.info("Refresh event signaled, waking up...")
-                        # We don't clear here anymore, we clear at the top of the loop
-                        # to ensure we don't miss a signal during the refresh itself.
                         break
             except Exception as e:
                 _LOGGER.error(f"Error in MQTT main loop: {e}. Retrying in 60 seconds...")

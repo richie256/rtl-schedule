@@ -3,7 +3,8 @@ from unittest.mock import MagicMock, patch
 
 class MockConfig:
     def __init__(self):
-        self.stop_code = 12345
+        self.stops = [{'stop_code': '12345'}]
+        self.stop_code = '12345'
         self.mqtt_host = "localhost"
         self.mqtt_port = 1883
         self.mqtt_username = None
@@ -36,7 +37,14 @@ def test_on_message_hass_status(mock_sleep, mock_event_wait, mock_publish_discov
     mock_cfg.mqtt_hass_status_topic = cfg.mqtt_hass_status_topic
     mock_cfg.hass_discovery_enabled = cfg.hass_discovery_enabled
     mock_cfg.hass_discovery_prefix = cfg.hass_discovery_prefix
+    mock_cfg.stops = cfg.stops
     mock_cfg.stop_code = cfg.stop_code
+    mock_cfg.mqtt_host = cfg.mqtt_host
+    mock_cfg.mqtt_port = cfg.mqtt_port
+    mock_cfg.mqtt_username = cfg.mqtt_username
+    mock_cfg.mqtt_password = cfg.mqtt_password
+    mock_cfg.mqtt_use_tls = cfg.mqtt_use_tls
+    mock_cfg.get_mqtt_state_topic.return_value = "topic"
     
     # Ensure publish_schedule returns None so the loop doesn't fail on datetime arithmetic
     mock_publish_schedule.return_value = None

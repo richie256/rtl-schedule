@@ -241,7 +241,7 @@ class ParseTransitData:
         
         return min_date, max_date
 
-    def get_next_stop(self, stop_id: str, parm_datetime: datetime.datetime, stop_code: str | None = None, is_lookahead: bool = False) -> Series | None:
+    def get_next_stop(self, stop_id: str, parm_datetime: datetime.datetime, stop_code: str | None = None, is_lookahead: bool = False, target_route: str | None = None, target_direction: str | None = None) -> Series | None:
         """Retrieve the next stop information, optionally looking ahead to the next day."""
         self.refresh()
         
@@ -266,6 +266,13 @@ class ParseTransitData:
 
                 today_schedule_with_arrivals = self._calculate_arrival_datetimes(today_schedule, parm_datetime.date())
 
+                # Apply filters if provided
+                if target_route:
+                    today_schedule_with_arrivals = today_schedule_with_arrivals[today_schedule_with_arrivals['route_id'].astype(str) == str(target_route)]
+                
+                if target_direction:
+                    today_schedule_with_arrivals = today_schedule_with_arrivals[today_schedule_with_arrivals['trip_headsign'].str.contains(target_direction, case=False, na=False)]
+
                 next_stop = today_schedule_with_arrivals[today_schedule_with_arrivals['arrival_datetime'] > parm_datetime]
 
                 if not next_stop.empty:
@@ -273,7 +280,7 @@ class ParseTransitData:
                     result['retrieve_method'] = 'GTFS'
                     return result
 
-                _LOGGER.info(f"No more buses in GTFS for stop {display_stop} after {parm_datetime}")
+                _LOGGER.info(f"No more buses matching filters in GTFS for stop {display_stop} after {parm_datetime}")
 
             except NoServiceFoundError as e:
                 _LOGGER.info(f"GTFS check failed for {parm_datetime.date()}: {e}")
@@ -287,7 +294,7 @@ class ParseTransitData:
 
         # Fallback to Hastus Scraper (RTL Only)
         if config.transit == "RTL":
-            live_arrivals = self.scraper.get_schedule(stop_id, parm_datetime.date())
+            live_arrivals = self.scraper.get_schedule(stop_id, parm_datetime.date(), target_route=target_route, target_direction=target_direction)
             if live_arrivals:
                 _LOGGER.info(f"Found {len(live_arrivals)} arrivals via live scraper for stop {display_stop}")
                 for arrival_obj in live_arrivals:
@@ -309,7 +316,7 @@ class ParseTransitData:
                 parm_datetime.date() + datetime.timedelta(days=1),
                 datetime.time.min
             )
-            return self.get_next_stop(stop_id, next_day_start, stop_code=stop_code, is_lookahead=True)
+            return self.get_next_stop(stop_id, next_day_start, stop_code=stop_code, is_lookahead=True, target_route=target_route, target_direction=target_direction)
 
         min_d, max_d = self._get_stop_date_range(stop_id)
         _LOGGER.error(f"No service found for {parm_datetime.date()} (GTFS & Live). Global GTFS range: {self.min_date} to {self.max_date}. Stop {display_stop} range: {min_d} to {max_d}")

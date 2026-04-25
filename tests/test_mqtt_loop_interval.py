@@ -12,7 +12,7 @@ def test_mqtt_loop_interval_bus_upcoming(mock_event_wait, mock_parser, mock_mqtt
     import transit_schedule.mqtt_client
     transit_schedule.mqtt_client._MQTT_LOOP_RUNNING = False
     # Mock config
-    mock_cfg.stop_code = "12345"
+    mock_cfg.stops = [{'stop_code': '12345'}]
     mock_cfg.mqtt_host = "localhost"
     mock_cfg.mqtt_port = 1883
     mock_cfg.mqtt_username = None
@@ -60,7 +60,7 @@ def test_mqtt_loop_interval_fallback(mock_event_wait, mock_parser, mock_mqtt_cli
     import transit_schedule.mqtt_client
     transit_schedule.mqtt_client._MQTT_LOOP_RUNNING = False
     # Mock config
-    mock_cfg.stop_code = "12345"
+    mock_cfg.stops = [{'stop_code': '12345'}]
     mock_cfg.mqtt_host = "localhost"
     mock_cfg.mqtt_port = 1883
     mock_cfg.mqtt_username = None
@@ -95,7 +95,7 @@ def test_mqtt_loop_interval_no_cap(mock_event_wait, mock_parser, mock_mqtt_clien
     import transit_schedule.mqtt_client
     transit_schedule.mqtt_client._MQTT_LOOP_RUNNING = False
     # Mock config
-    mock_cfg.stop_code = "12345"
+    mock_cfg.stops = [{'stop_code': '12345'}]
     mock_cfg.mqtt_host = "localhost"
     mock_cfg.mqtt_port = 1883
     mock_cfg.mqtt_username = None

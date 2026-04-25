@@ -69,7 +69,8 @@ docker run --env-file .env -v ./data:/data -e MODE=mqtt transit-schedule
 | --- | --- | --- |
 | `TRANSIT` | Transit agency (`RTL`, `STM`, `STL`) | `RTL` |
 | `MODE` | Application mode (`http` or `mqtt`) | `http` |
-| `STOP_CODE` | Public stop code (Required for MQTT mode) | None |
+| `STOP_CODE` | Public stop code (Required for MQTT mode if STOPS_CONFIG not set) | None |
+| `STOPS_CONFIG` | JSON array for multiple stops (See below) | None |
 | `TARGET_ROUTE` | Filter by specific route ID (e.g., `44`) | None |
 | `TARGET_DIRECTION` | Filter by trip headsign (e.g., `Direction Terminus Panama`) | `Direction Terminus Panama` (RTL only) |
 | `FORCE_CACHE_REFRESH` | Manually invalidate and refresh the live scraper cache | `False` |
@@ -83,6 +84,22 @@ The application supports two layers of filtering to ensure you get exactly the b
 2.  **`TARGET_DIRECTION`**: Used to filter by the destination or direction (headsign). For **RTL**, this defaults to `Direction Terminus Panama`. 
 
 If both are set, the bus must match **both** the route ID and the direction string to be included in the schedule.
+
+### :busstop: Multiple Stops Configuration (MQTT only)
+
+If you want to monitor multiple stops or multiple routes at the same stop, use the `STOPS_CONFIG` environment variable with a JSON array. This overrides the single stop variables (`STOP_CODE`, `TARGET_ROUTE`, `TARGET_DIRECTION`).
+
+**Example:**
+```bash
+export STOPS_CONFIG='[
+  {"stop_code": "31592", "route_id": "14", "direction": "Terminus Longueuil"},
+  {"stop_code": "32752", "route_id": "44", "direction": "Terminus Panama"}
+]'
+```
+
+Each entry in the array will create a separate Home Assistant sensor and publish to a unique MQTT topic:
+- Topic: `home/transit/<transit>/stop_<stop_code>_<route_id>` (or `stop_<stop_code>` if route_id is omitted).
+- Discovery: Unique sensors for each entry using a combined ID.
 
 ## :bar_chart: Data Sources
 

@@ -29,8 +29,6 @@ class Config:
             "STM": "",
             "STL": ""
         }
-        self.target_direction = os.environ.get("TARGET_DIRECTION", default_directions.get(self.transit, ""))
-        self.target_route = os.environ.get("TARGET_ROUTE")
         self.force_cache_refresh = os.environ.get("FORCE_CACHE_REFRESH", "False").lower() == "true"
 
         # MQTT Configuration
@@ -45,20 +43,66 @@ class Config:
         self.mqtt_use_tls = os.environ.get("MQTT_USE_TLS", "False").lower() == "true"
         
         # Stop Configuration
-        try:
-            self.stop_code = int(os.environ["STOP_CODE"]) if "STOP_CODE" in os.environ else None
-        except ValueError:
-            _LOGGER.error("STOP_CODE must be an integer")
-            self.stop_code = None
+        self.stops = []
+        stops_config = os.environ.get("STOPS_CONFIG")
+        if stops_config:
+            try:
+                import json
+                self.stops = json.loads(stops_config)
+                # Ensure each stop has required fields and proper types
+                for stop in self.stops:
+                    stop['stop_code'] = str(stop['stop_code'])
+            except Exception as e:
+                _LOGGER.error(f"Error parsing STOPS_CONFIG: {e}")
 
-        # Home Assistant Discovery
+        if not self.stops:
+            stop_code_env = os.environ.get("STOP_CODE")
+            if stop_code_env:
+                try:
+                    # Validate it's an integer for legacy reasons
+                    int(stop_code_env)
+                    self.stops.append({
+                        "stop_code": str(stop_code_env),
+                        "route_id": os.environ.get("TARGET_ROUTE"),
+                        "direction": os.environ.get("TARGET_DIRECTION", default_directions.get(self.transit, ""))
+                    })
+                except ValueError:
+                    _LOGGER.error("STOP_CODE must be an integer")
+
+        # Compatibility for single stop code
+        self._stop_code = self.stops[0]['stop_code'] if self.stops else None
+
+    @property
+    def stop_code(self):
+        return self._stop_code
+
+    @property
+    def target_direction(self):
+        return self.stops[0].get('direction', "") if self.stops else ""
+
+    @property
+    def target_route(self):
+        return self.stops[0].get('route_id') if self.stops else None
+
+    # Home Assistant Discovery
         self.hass_discovery_enabled = os.environ.get("HASS_DISCOVERY_ENABLED", "False").lower() == "true"
         self.hass_discovery_prefix = os.environ.get("HASS_DISCOVERY_PREFIX", "homeassistant")
 
         # MQTT Topics
         self.mqtt_refresh_topic = os.environ.get("MQTT_REFRESH_TOPIC", f"{self.transit.lower()}/schedule/refresh")
+        
+        # State topic for single-stop compatibility
         self.mqtt_state_topic = os.environ.get("MQTT_STATE_TOPIC", f"home/transit/{self.transit.lower()}/stop_{self.stop_code}" if self.stop_code else f"home/transit/{self.transit.lower()}/stop_unknown")
+        
         self.mqtt_hass_status_topic = os.environ.get("MQTT_HASS_STATUS_TOPIC", f"{self.hass_discovery_prefix}/status")
+
+    def get_mqtt_state_topic(self, stop_config: dict) -> str:
+        """Returns the MQTT state topic for a specific stop configuration."""
+        stop_code = stop_config['stop_code']
+        route_id = stop_config.get('route_id')
+        if route_id:
+            return f"home/transit/{self.transit.lower()}/stop_{stop_code}_{route_id}"
+        return f"home/transit/{self.transit.lower()}/stop_{stop_code}"
 
     def to_dict(self) -> dict[str, Any]:
         return {k: v for k, v in self.__dict__.items() if not k.startswith('_')}
