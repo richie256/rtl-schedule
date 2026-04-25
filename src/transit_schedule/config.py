@@ -72,6 +72,18 @@ class Config:
         # Compatibility for single stop code
         self._stop_code = self.stops[0]['stop_code'] if self.stops else None
 
+        # Home Assistant Discovery
+        self.hass_discovery_enabled = os.environ.get("HASS_DISCOVERY_ENABLED", "False").lower() == "true"
+        self.hass_discovery_prefix = os.environ.get("HASS_DISCOVERY_PREFIX", "homeassistant")
+
+        # MQTT Topics
+        self.mqtt_refresh_topic = os.environ.get("MQTT_REFRESH_TOPIC", f"{self.transit.lower()}/schedule/refresh")
+        
+        # State topic for single-stop compatibility
+        self.mqtt_state_topic = os.environ.get("MQTT_STATE_TOPIC", f"home/transit/{self.transit.lower()}/stop_{self.stop_code}" if self.stop_code else f"home/transit/{self.transit.lower()}/stop_unknown")
+        
+        self.mqtt_hass_status_topic = os.environ.get("MQTT_HASS_STATUS_TOPIC", f"{self.hass_discovery_prefix}/status")
+
     @property
     def stop_code(self):
         return self._stop_code
@@ -83,18 +95,6 @@ class Config:
     @property
     def target_route(self):
         return self.stops[0].get('route_id') if self.stops else None
-
-    # Home Assistant Discovery
-        self.hass_discovery_enabled = os.environ.get("HASS_DISCOVERY_ENABLED", "False").lower() == "true"
-        self.hass_discovery_prefix = os.environ.get("HASS_DISCOVERY_PREFIX", "homeassistant")
-
-        # MQTT Topics
-        self.mqtt_refresh_topic = os.environ.get("MQTT_REFRESH_TOPIC", f"{self.transit.lower()}/schedule/refresh")
-        
-        # State topic for single-stop compatibility
-        self.mqtt_state_topic = os.environ.get("MQTT_STATE_TOPIC", f"home/transit/{self.transit.lower()}/stop_{self.stop_code}" if self.stop_code else f"home/transit/{self.transit.lower()}/stop_unknown")
-        
-        self.mqtt_hass_status_topic = os.environ.get("MQTT_HASS_STATUS_TOPIC", f"{self.hass_discovery_prefix}/status")
 
     def get_mqtt_state_topic(self, stop_config: dict) -> str:
         """Returns the MQTT state topic for a specific stop configuration."""
