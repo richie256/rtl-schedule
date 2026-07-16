@@ -116,19 +116,41 @@ def test_load_cache_error(mocker):
     s = HastusScraper()
     assert s.schedule_cache == {}
 
-def test_fetch_and_cache_no_links(scraper, mocker):
+def test_fetch_and_cache_success(scraper, mocker):
     mock_res = MagicMock()
-    mock_res.text = "<html></html>"
-    mocker.patch.object(scraper.session, 'get', return_value=mock_res)
-    scraper._fetch_and_cache({"stop": "S1", "pattern": "P1", "ligne": "L1"}, datetime.date.today(), ("S1", "P1", datetime.date.today()))
-    assert ("S1", "P1", datetime.date.today()) in scraper.schedule_cache
+    mock_res.status_code = 200
+    # Return valid JSON response with one stop time
+    mock_res.json.return_value = {
+        'data': [{'scheduledarrival': 36000, 'stopid': 'S1', 'id': 'P1:01', 'id_trip': 'TRIP_SE_1', 'date': '2026-04-20'}]
+    }
+    mock_get = mocker.patch.object(scraper.session, 'get', return_value=mock_res)
+    
+    date_val = datetime.date(2026, 4, 22)
+    cache_key = ("S1", "P1", datetime.date(2026, 4, 20))
+    scraper._fetch_and_cache({"stop": "S1", "pattern": "P1", "ligne": "L1"}, date_val, cache_key)
+    
+    # It should have called get 3 times (Monday, Saturday, Sunday)
+    assert mock_get.call_count == 3
+    # Check that cache has entries
+    assert cache_key in scraper.schedule_cache
+    # Because of our mock_res returning TRIP_SE_1, and is_day_specific=True overriding:
+    # Monday (semaine) -> semaine list gets [10:00:00]
+    # Saturday (samedi) -> samedi list gets [10:00:00]
+    # Sunday (dimanche) -> dimanche list gets [10:00:00]
+    assert datetime.time(10, 0) in scraper.schedule_cache[cache_key]['semaine']
+    assert datetime.time(10, 0) in scraper.schedule_cache[cache_key]['samedi']
+    assert datetime.time(10, 0) in scraper.schedule_cache[cache_key]['dimanche']
 
-def test_fetch_and_cache_out_of_week(scraper, mocker):
-    mock_landing = MagicMock()
-    mock_landing.text = '<a href="madOper.php?q=stops_stoptimes&t=20200101">Old</a>'
-    mocker.patch.object(scraper.session, 'get', return_value=mock_landing)
-    scraper._fetch_and_cache({"stop": "S1", "pattern": "P1", "ligne": "L1"}, datetime.date(2026, 4, 22), ("S1", "P1", datetime.date(2026, 4, 20)))
-    assert scraper.schedule_cache[("S1", "P1", datetime.date(2026, 4, 20))] == {'semaine': [], 'samedi': [], 'dimanche': []}
+def test_fetch_and_cache_empty_response(scraper, mocker):
+    mock_res = MagicMock()
+    mock_res.status_code = 200
+    mock_res.json.return_value = {'data': []}
+    mocker.patch.object(scraper.session, 'get', return_value=mock_res)
+    
+    date_val = datetime.date(2026, 4, 22)
+    cache_key = ("S1", "P1", datetime.date(2026, 4, 20))
+    scraper._fetch_and_cache({"stop": "S1", "pattern": "P1", "ligne": "L1"}, date_val, cache_key)
+    assert scraper.schedule_cache[cache_key] == {'semaine': [], 'samedi': [], 'dimanche': []}
 
 def test_get_stop_code_from_id_not_found(scraper):
     scraper.stop_mappings = {"32752": ["15:2752"]}
@@ -225,17 +247,16 @@ def test_get_stop_patterns_unexpected_error(scraper, mocker):
     assert scraper.get_stop_patterns("32752") == []
 
 def test_fetch_and_cache_bad_response(scraper, mocker):
-    mock_landing = MagicMock()
-    mock_landing.text = '<a href="madOper.php?q=stops_stoptimes&j=1">Link</a>'
     mock_bad_res = MagicMock()
     mock_bad_res.status_code = 200
-    mock_bad_res.json.return_value = "not a dict"
-    def side_effect(url, **kwargs):
-        if "j=1" in url: 
-            return mock_bad_res
-        return mock_landing
-    mocker.patch.object(scraper.session, 'get', side_effect=side_effect)
-    scraper._fetch_and_cache({"stop": "S1", "pattern": "P1", "ligne": "L1"}, datetime.date.today(), ("S1", "P1", datetime.date.today()))
+    mock_bad_res.json.side_effect = ValueError("not valid json")
+    mocker.patch.object(scraper.session, 'get', return_value=mock_bad_res)
+    
+    date_val = datetime.date.today()
+    cache_key = ("S1", "P1", date_val)
+    # This should log warning and not raise exception
+    scraper._fetch_and_cache({"stop": "S1", "pattern": "P1", "ligne": "L1"}, date_val, cache_key)
+    assert scraper.schedule_cache[cache_key] == {'semaine': [], 'samedi': [], 'dimanche': []}
 
 def test_parse_json_weekly_schedule_trip_markers(scraper):
     # Test _SE_ marker

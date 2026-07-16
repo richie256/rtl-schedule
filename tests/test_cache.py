@@ -33,48 +33,58 @@ def test_cache_logic(scraper):
         # Set "now" to 10:00 AM (not triggered by >= 20:00 rule)
         mock_now.return_value = datetime.datetime(2026, 3, 16, 10, 0, 0)
 
-        # Mock landing page response
-        mock_landing_res = MagicMock()
-        mock_landing_res.text = '<a href="madOper.php?q=stops_stoptimes&p=2752&s=RTL&web=&pp=44_1_1&l=44&t=regulier">link</a>'
-        
-        # Mock service period response
-        mock_period_res = MagicMock()
-        mock_period_res.json.return_value = {
+        # Mock responses for Monday, Saturday, Sunday
+        mock_mon_res = MagicMock()
+        mock_mon_res.status_code = 200
+        mock_mon_res.json.return_value = {
             'data': [
-                {'scheduledarrival': 8 * 3600, 'date': '2026-03-16T00:00:00Z', 'stopid': '2752', 'id': '44_1_1:01'},
-                {'scheduledarrival': 8 * 3600, 'date': '2026-03-17T00:00:00Z', 'stopid': '2752', 'id': '44_1_1:02'},
-                {'scheduledarrival': 9 * 3600, 'date': '2026-03-21T00:00:00Z', 'stopid': '2752', 'id': '44_1_1:03'},
-                {'scheduledarrival': 10 * 3600, 'date': '2026-03-22T00:00:00Z', 'stopid': '2752', 'id': '44_1_1:04'}
+                {'scheduledarrival': 8 * 3600, 'date': '2026-03-16T00:00:00Z', 'stopid': '2752', 'id': '44_1_1:01'}
             ]
         }
         
-        mock_session.get.side_effect = [mock_landing_res, mock_period_res]
+        mock_sat_res = MagicMock()
+        mock_sat_res.status_code = 200
+        mock_sat_res.json.return_value = {
+            'data': [
+                {'scheduledarrival': 9 * 3600, 'date': '2026-03-21T00:00:00Z', 'stopid': '2752', 'id': '44_1_1:02'}
+            ]
+        }
+
+        mock_sun_res = MagicMock()
+        mock_sun_res.status_code = 200
+        mock_sun_res.json.return_value = {
+            'data': [
+                {'scheduledarrival': 10 * 3600, 'date': '2026-03-22T00:00:00Z', 'stopid': '2752', 'id': '44_1_1:03'}
+            ]
+        }
         
-        # Monday - Should trigger SCRAPE (and cache)
+        mock_session.get.side_effect = [mock_mon_res, mock_sat_res, mock_sun_res]
+        
+        # Monday - Should trigger SCRAPE (and cache Monday, Saturday, Sunday)
         mon = datetime.date(2026, 3, 16)
         mon_schedule = scraper.get_schedule_by_params(test_pattern, mon)
         assert len(mon_schedule) == 1
         assert mon_schedule[0].time() == datetime.time(8, 0)
-        assert mock_session.get.call_count == 2
+        assert mock_session.get.call_count == 3
         
         # Tuesday - Should use CACHE
         tue = datetime.date(2026, 3, 17)
         tue_schedule = scraper.get_schedule_by_params(test_pattern, tue)
         assert len(tue_schedule) == 1
         assert tue_schedule[0].time() == datetime.time(8, 0)
-        # Call count should still be 2
-        assert mock_session.get.call_count == 2
+        # Call count should still be 3
+        assert mock_session.get.call_count == 3
         
         # Saturday - Should use CACHE
         sat = datetime.date(2026, 3, 21)
         sat_schedule = scraper.get_schedule_by_params(test_pattern, sat)
         assert len(sat_schedule) == 1
         assert sat_schedule[0].time() == datetime.time(9, 0)
-        assert mock_session.get.call_count == 2
+        assert mock_session.get.call_count == 3
 
         # Sunday - Should use CACHE
         sun = datetime.date(2026, 3, 22)
         sun_schedule = scraper.get_schedule_by_params(test_pattern, sun)
         assert len(sun_schedule) == 1
         assert sun_schedule[0].time() == datetime.time(10, 0)
-        assert mock_session.get.call_count == 2
+        assert mock_session.get.call_count == 3

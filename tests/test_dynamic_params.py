@@ -46,19 +46,24 @@ def test_get_schedule_by_params(scraper):
     today = datetime.date(2026, 3, 16)
     
     with patch.object(scraper, 'session') as mock_session:
-        # Mock landing page
-        mock_landing_res = MagicMock()
-        mock_landing_res.text = '<a href="madOper.php?q=stops_stoptimes&p=2752&t=regulier">link</a>'
-        
-        # Mock service period response
-        mock_period_res = MagicMock()
-        mock_period_res.json.return_value = {
+        # Mock responses for Monday, Saturday, Sunday
+        mock_mon_res = MagicMock()
+        mock_mon_res.status_code = 200
+        mock_mon_res.json.return_value = {
             'data': [
                 {'scheduledarrival': 28800, 'date': '2026-03-16T00:00:00Z', 'stopid': '2752', 'id': '44_1_1:01'} # 08:00
             ]
         }
         
-        mock_session.get.side_effect = [mock_landing_res, mock_period_res]
+        mock_sat_res = MagicMock()
+        mock_sat_res.status_code = 200
+        mock_sat_res.json.return_value = {'data': []}
+
+        mock_sun_res = MagicMock()
+        mock_sun_res.status_code = 200
+        mock_sun_res.json.return_value = {'data': []}
+        
+        mock_session.get.side_effect = [mock_mon_res, mock_sat_res, mock_sun_res]
         
         schedule = scraper.get_schedule_by_params(test_pattern, today)
         

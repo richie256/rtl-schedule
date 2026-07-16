@@ -271,109 +271,45 @@ class HastusScraper:
 
     def _fetch_and_cache(self, params, date, cache_key):
         """Fetch data from network and populate cache."""
-        landing_params = {
-            "q": "stops_stoptimes",
-            "p": params['stop'],
-            "s": "RTL",
-            "web": "",
-            "pp": params['pattern'],
-            "l": params['ligne']
-        }
-        
         try:
-            _LOGGER.info(f"Discovering schedule links for {params['ligne']} at stop {params['stop']}")
-            landing_res = self.session.get(self.BASE_URL, params=landing_params, timeout=15)
-            soup = BeautifulSoup(landing_res.text, 'html.parser')
-            links = soup.find_all('a', href=re.compile(r'q=stops_stoptimes'))
-            
+            import zoneinfo
+            mtl_tz = zoneinfo.ZoneInfo("America/Montreal")
             combined_weekly_data = {'semaine': [], 'samedi': [], 'dimanche': []}
             week_start = date - datetime.timedelta(days=date.weekday())
-            week_end = week_start + datetime.timedelta(days=6)
             
-            found_any = False
-            _LOGGER.info(f"Found {len(links)} candidate links on landing page.")
+            # We will fetch 3 dates for the target week: Monday (for semaine), Saturday (for samedi), Sunday (for dimanche)
+            days_to_fetch = [
+                ('semaine', week_start),
+                ('samedi', week_start + datetime.timedelta(days=5)),
+                ('dimanche', week_start + datetime.timedelta(days=6))
+            ]
             
-            for link in links:
-                href = link.get('href')
-                text = link.get_text(strip=True).lower()
+            for cat, target_date in days_to_fetch:
+                dt = datetime.datetime.combine(target_date, datetime.time(12, 0, 0), tzinfo=mtl_tz)
+                t_val = int(dt.timestamp())
                 
-                # Extract full URL
-                if href.startswith('/'):
-                    url = f"https://madprep_i.rtl-longueuil.qc.ca{href}"
-                elif href.startswith('madOper.php'):
-                    url = f"https://madprep_i.rtl-longueuil.qc.ca/{href}"
-                else:
-                    url = href if "://" in href else f"https://madprep_i.rtl-longueuil.qc.ca/{href}"
-
-                # Link Classification Logic
-                link_date = None
+                api_params = {
+                    "q": "stops_stoptimes",
+                    "p": params['stop'],
+                    "s": "RTL",
+                    "pp": params['pattern'],
+                    "l": params['ligne'],
+                    "t": str(t_val)
+                }
                 
-                # 1. Trust 'j' parameter (Jour: 1-5 Weekday, 6 Sat, 7 Sun)
-                j_match = re.search(r'[&?]j=(\d)', url)
-                if j_match:
-                    j_val = int(j_match.group(1))
-                    if j_val <= 5:
-                        link_date = week_start
-                    elif j_val == 6:
-                        link_date = week_start + datetime.timedelta(days=5)
-                    elif j_val == 7:
-                        link_date = week_start + datetime.timedelta(days=6)
-                    _LOGGER.debug(f"Link categorization from j={j_val}: {link_date}")
-
-                # 2. Trust timestamp 't' if 'j' is missing
-                if not link_date:
-                    t_match = re.search(r'[&?]t=(\d+)', url)
-                    if t_match:
-                        val = t_match.group(1)
-                        try:
-                            if len(val) == 8:
-                                link_date = datetime.datetime.strptime(val, '%Y%m%d').date()
-                            elif len(val) >= 10:
-                                # Import inline or use global
-                                import zoneinfo
-                                mtl_tz = zoneinfo.ZoneInfo("America/Montreal")
-                                link_date = datetime.datetime.fromtimestamp(int(val[:10]), tz=mtl_tz).date()
-                        except (ValueError, OSError):
-                            pass
-                        _LOGGER.debug(f"Link categorization from t={val}: {link_date}")
-
-                # 3. Fallback to text (Strictly avoiding "lundi" matching range links)
-                if not link_date:
-                    # For range links like "du lundi... au dimanche", prioritize "semaine"
-                    if ('semaine' in text or 'lundi' in text) and 'au' in text:
-                        link_date = week_start
-                    elif 'samedi' in text:
-                        link_date = week_start + datetime.timedelta(days=5)
-                    elif 'dimanche' in text:
-                        link_date = week_start + datetime.timedelta(days=6)
-                    elif 'semaine' in text or 'lundi' in text:
-                        link_date = week_start
-                    else:
-                        link_date = date
-                    _LOGGER.debug(f"Link categorization from text '{text}': {link_date}")
-
-                # Strict Filter: Only follow links for the current week
-                if link_date and (link_date < week_start or link_date > week_end):
-                    _LOGGER.info(f"Skipping link outside target week: {link_date} (Link: '{text}')")
-                    continue
-
-                _LOGGER.info(f"Fetching schedule: {text} | Inferred Date: {link_date}")
-                response = self.session.get(url, timeout=15)
-                found_any = True
+                _LOGGER.info(f"Direct fetch: schedule for {params['ligne']} at stop {params['stop']} on {target_date} ({cat})")
+                response = self.session.get(self.BASE_URL, params=api_params, timeout=15)
+                response.raise_for_status()
                 
                 try:
                     json_data = response.json()
                     if isinstance(json_data, dict) and 'data' in json_data:
-                        period_data = self._parse_json_weekly_schedule(json_data, params['stop'], params['pattern'], link_date)
-                        for cat in combined_weekly_data:
-                            combined_weekly_data[cat].extend(period_data[cat])
+                        period_data = self._parse_json_weekly_schedule(json_data, params['stop'], params['pattern'], target_date, is_day_specific=True)
+                        combined_weekly_data[cat].extend(period_data[cat])
                     else:
-                        _LOGGER.warning(f"Response from {url[:50]}... was not valid JSON data")
+                        _LOGGER.warning(f"Response was not valid JSON data for date {target_date}")
                 except ValueError:
-                    _LOGGER.warning(f"Failed to parse JSON for {text}")
-
-            if not found_any:
-                _LOGGER.warning("No valid schedule links found.")
+                    _LOGGER.warning(f"Failed to parse JSON for date {target_date}")
 
             # Deduplicate and sort
             for cat in combined_weekly_data:
