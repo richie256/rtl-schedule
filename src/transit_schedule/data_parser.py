@@ -128,11 +128,20 @@ class ParseTransitData:
             parsed = urlparse(GTFS_URL)
             base_url = f"{parsed.scheme}://{parsed.netloc}/"
             payload = {"cmd": "request.get", "url": base_url, "maxTimeout": 60000}
-            fs_resp = requests.post(f"{flaresolverr_url}/v1", json=payload, timeout=70)
-            fs_resp.raise_for_status()
+            try:
+                # connect_timeout=10s (fast failure if host is unreachable)
+                # read_timeout=70s  (Chrome needs up to ~60s to solve the challenge)
+                fs_resp = requests.post(f"{flaresolverr_url}/v1", json=payload, timeout=(10, 70))
+                fs_resp.raise_for_status()
+            except requests.exceptions.ConnectionError as e:
+                raise RuntimeError(f"FlareSolverr unreachable at {flaresolverr_url}: {e}") from e
+            except requests.exceptions.Timeout as e:
+                raise RuntimeError(f"FlareSolverr timed out at {flaresolverr_url}: {e}") from e
+            except requests.exceptions.HTTPError as e:
+                raise RuntimeError(f"FlareSolverr returned HTTP error: {e}") from e
             fs_data = fs_resp.json()
             if fs_data.get("status") != "ok":
-                raise RuntimeError(f"FlareSolverr failed: {fs_data.get('message', 'unknown error')}")
+                raise RuntimeError(f"FlareSolverr challenge failed: {fs_data.get('message', 'unknown error')}")
             solution = fs_data["solution"]
             cookies = {c["name"]: c["value"] for c in solution.get("cookies", [])}
             user_agent = solution.get("userAgent", "")
