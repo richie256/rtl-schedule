@@ -75,6 +75,48 @@ docker run --env-file .env -v ./data:/data -e MODE=mqtt transit-schedule
 | `TARGET_DIRECTION` | Filter by trip headsign (e.g., `Direction Terminus Panama`) | `Direction Terminus Panama` (RTL only) |
 | `FORCE_CACHE_REFRESH` | Manually invalidate and refresh the live scraper cache | `False` |
 | `RETRIEVAL_METHOD` | Data source strategy (`live` or `gtfs`) | `live` for RTL, `gtfs` others |
+| `FLARESOLVERR_URL` | URL of a [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) instance (required for RTL GTFS mode) | None |
+
+### :closed_lock_with_key: RTL & Cloudflare — FlareSolverr Required for GTFS Mode
+
+The RTL GTFS feed (`rtl-longueuil.qc.ca`) is protected by **Cloudflare bot protection**, which blocks all automated HTTP downloads. This means:
+
+| Mode | FlareSolverr needed? | Notes |
+|---|---|---|
+| `RETRIEVAL_METHOD=live` | ❌ No | Uses the RTL Hastus scraper instead of GTFS. Works out of the box. |
+| `RETRIEVAL_METHOD=gtfs` | ✅ **Yes** | Without FlareSolverr the download returns HTTP 403 and the app cannot start. |
+
+If you want to use **GTFS mode for RTL**, you must run a [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) container alongside transit-schedule and point `FLARESOLVERR_URL` at it.
+
+FlareSolverr works by spinning up a real Chrome browser internally to solve the Cloudflare JS challenge. It returns the resulting cookies to transit-schedule, which then uses them to download the zip directly — no shared volumes needed, pure HTTP.
+
+#### Docker Compose example (RTL GTFS mode with FlareSolverr)
+
+```yaml
+services:
+  transit-schedule:
+    image: ghcr.io/richie256/transit-schedule:latest
+    environment:
+      - TRANSIT=RTL
+      - RETRIEVAL_METHOD=gtfs
+      - FLARESOLVERR_URL=http://flaresolverr:8191
+      - STOP_CODE=31592
+      - MQTT_HOST=your_mqtt_broker_host
+    volumes:
+      - ./data:/data
+    networks:
+      - transit-net
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    networks:
+      - transit-net
+
+networks:
+  transit-net:
+```
+
+> **Note:** If FlareSolverr is already running elsewhere on your server, just add `FLARESOLVERR_URL=http://<host>:<port>` and make sure both containers share a Docker network.
 
 ### :mag: Filtering Logic
 
@@ -103,10 +145,10 @@ Each entry in the array will create a separate Home Assistant sensor and publish
 
 ## :bar_chart: Data Sources
 
-- **RTL GTFS:** http://www.rtl-longueuil.qc.ca/transit/latestfeed/RTL.zip
+- **RTL GTFS:** http://www.rtl-longueuil.qc.ca/transit/latestfeed/RTL.zip ⚠️ *(Cloudflare protected — requires [FlareSolverr](#closed_lock_with_key-rtl--cloudflare--flaresolverr-required-for-gtfs-mode))*
 - **STM GTFS:** https://www.stm.info/sites/default/files/gtfs/gtfs_stm.zip
 - **STL GTFS:** https://www.stlaval.ca/datas/opendata/GTF_STL.zip
-- **RTL Live Scraper:** Fallback for RTL when GTFS is unavailable.
+- **RTL Live Scraper:** Default for RTL. Uses the Hastus API directly — no GTFS download required.
 
 ## :test_tube: Unit Tests
 
