@@ -2,6 +2,7 @@
 import datetime
 import logging
 import os
+from unittest.mock import MagicMock, patch
 
 # Mock environment variable for the test
 os.environ["RETRIEVAL_METHOD"] = "live"
@@ -12,16 +13,26 @@ from transit_schedule.data_parser import ParseTransitData
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("transit-schedule")
 
-def test_retrieval_logic():
+@patch('transit_schedule.data_parser.HastusScraper')
+@patch('transit_schedule.data_parser.requests.get')
+def test_retrieval_logic(mock_requests_get, mock_hastus_scraper):
+    # Simulate a 403 from the GTFS server so no zip is downloaded
+    mock_response = MagicMock()
+    mock_response.raise_for_status.side_effect = Exception("403 Client Error: Forbidden")
+    mock_requests_get.return_value = mock_response
+
+    # Simulate the live scraper returning no results
+    mock_hastus_scraper.return_value.get_schedule.return_value = []
+
     print(f"Testing with RETRIEVAL_METHOD: {RETRIEVAL_METHOD}")
-    
+
     parser = ParseTransitData()
     stop_id = 2752 # Stop 32752
     now = datetime.datetime(2026, 3, 30, 12, 0)
-    
+
     # This should log "Skipping GTFS check"
     next_stop = parser.get_next_stop(stop_id, now)
-    
+
     if next_stop is not None:
         print(f"Result method: {next_stop.get('retrieve_method')}")
     else:
