@@ -111,17 +111,52 @@ class ParseTransitData:
 
     @staticmethod
     def _download_gtfs_file(zipfile_location) -> None:
-        """ Download the GTFS file from the website, write it on disk. """
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            ),
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "fr,en-US;q=0.7,en;q=0.3",
-        }
-        my_file = requests.get(GTFS_URL, allow_redirects=True, timeout=60, headers=headers)
+        """Download the GTFS file from the website, write it on disk.
+
+        If FLARESOLVERR_URL is configured, uses FlareSolverr to bypass Cloudflare:
+        1. POST to FlareSolverr with the base domain → it solves the JS challenge
+        2. Extract the resulting cf_clearance cookies + User-Agent
+        3. Use those cookies with a direct requests.get() to download the binary zip
+        """
+        flaresolverr_url = config.flaresolverr_url
+
+        if flaresolverr_url:
+            _LOGGER.info(f"Using FlareSolverr at {flaresolverr_url} to bypass Cloudflare for GTFS download")
+            # Step 1: Solve the Cloudflare challenge on the base domain
+            # (requesting the zip URL directly may trigger a download dialog in the browser)
+            from urllib.parse import urlparse
+            parsed = urlparse(GTFS_URL)
+            base_url = f"{parsed.scheme}://{parsed.netloc}/"
+            payload = {"cmd": "request.get", "url": base_url, "maxTimeout": 60000}
+            fs_resp = requests.post(f"{flaresolverr_url}/v1", json=payload, timeout=70)
+            fs_resp.raise_for_status()
+            fs_data = fs_resp.json()
+            if fs_data.get("status") != "ok":
+                raise RuntimeError(f"FlareSolverr failed: {fs_data.get('message', 'unknown error')}")
+            solution = fs_data["solution"]
+            cookies = {c["name"]: c["value"] for c in solution.get("cookies", [])}
+            user_agent = solution.get("userAgent", "")
+            _LOGGER.info(f"FlareSolverr solved challenge, got {len(cookies)} cookies. Downloading zip...")
+            # Step 2: Download the zip using the Cloudflare-cleared cookies
+            my_file = requests.get(
+                GTFS_URL,
+                headers={"User-Agent": user_agent},
+                cookies=cookies,
+                allow_redirects=True,
+                timeout=60,
+            )
+        else:
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                ),
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "fr,en-US;q=0.7,en;q=0.3",
+            }
+            my_file = requests.get(GTFS_URL, allow_redirects=True, timeout=60, headers=headers)
+
         my_file.raise_for_status()
         with open(zipfile_location, 'wb') as my_zip:
             my_zip.write(my_file.content)

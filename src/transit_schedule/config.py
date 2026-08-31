@@ -31,6 +31,10 @@ class Config:
         }
         self.force_cache_refresh = os.environ.get("FORCE_CACHE_REFRESH", "False").lower() == "true"
 
+        # FlareSolverr — optional proxy to bypass Cloudflare on GTFS downloads
+        # e.g. "http://flaresolverr:8191"
+        self.flaresolverr_url = os.environ.get("FLARESOLVERR_URL", "").rstrip("/")
+
         # MQTT Configuration
         self.mqtt_host = os.environ.get("MQTT_HOST")
         try:
