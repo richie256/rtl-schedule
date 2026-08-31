@@ -63,6 +63,12 @@ Then run the container:
 docker run --env-file .env -v ./data:/data -e MODE=mqtt transit-schedule
 ```
 
+### :round_pushpin: How to Find a Stop Code
+
+To get a stop code, open **Google Maps** and locate a bus stop in an area served by your transit agency. Click on the bus stop marker, and you will find the stop code in the information panel on the left.
+
+![How to find a stop code on Google Maps](docs/images/sample_googleMaps.png)
+
 ### :gear: Configuration Options
 
 | Environment Variable | Description | Default |
