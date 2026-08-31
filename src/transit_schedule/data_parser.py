@@ -103,6 +103,8 @@ class ParseTransitData:
 
     def refresh(self, force=False):
         """Check if data needs to be refreshed and reload if necessary."""
+        if config.retrieval_method == "live":
+            return  # GTFS data is not used in live mode, skip refresh
         if force or is_file_expired(self.file_path):
             _LOGGER.info(f"Refreshing GTFS data (force={force})...")
             self._load_data(force_download=True)

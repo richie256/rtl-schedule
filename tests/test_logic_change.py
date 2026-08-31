@@ -2,7 +2,7 @@
 import datetime
 import logging
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 # Mock environment variable for the test
 os.environ["RETRIEVAL_METHOD"] = "live"
@@ -16,10 +16,8 @@ logger = logging.getLogger("transit-schedule")
 @patch('transit_schedule.data_parser.HastusScraper')
 @patch('transit_schedule.data_parser.requests.get')
 def test_retrieval_logic(mock_requests_get, mock_hastus_scraper):
-    # Simulate a 403 from the GTFS server so no zip is downloaded
-    mock_response = MagicMock()
-    mock_response.raise_for_status.side_effect = Exception("403 Client Error: Forbidden")
-    mock_requests_get.return_value = mock_response
+    # Prevent any real HTTP calls during init (no zip on disk in CI)
+    mock_requests_get.return_value.raise_for_status.return_value = None
 
     # Simulate the live scraper returning no results
     mock_hastus_scraper.return_value.get_schedule.return_value = []
