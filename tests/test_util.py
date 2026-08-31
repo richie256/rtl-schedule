@@ -27,12 +27,12 @@ def test_is_file_expired(mocker):
     mocker.patch('transit_schedule.util.os.path.isfile', return_value=True)
     mocker.patch('transit_schedule.util.os.path.getsize', return_value=1024)
     
-    # Case 1: File is not expired
-    mocker.patch('transit_schedule.util.get_modification_date', return_value=datetime.datetime(2023, 3, 15, 12, 0, 0))
+    # Case 1: File is not expired (48h old — within the 72h window)
+    mocker.patch('transit_schedule.util.get_modification_date', return_value=datetime.datetime(2023, 3, 13, 12, 0, 0))
     assert not is_file_expired("any_file.txt")
 
-    # Case 2: File is expired
-    mocker.patch('transit_schedule.util.get_modification_date', return_value=datetime.datetime(2023, 3, 14, 12, 0, 0))
+    # Case 2: File is expired (96h old — beyond the 72h window)
+    mocker.patch('transit_schedule.util.get_modification_date', return_value=datetime.datetime(2023, 3, 11, 12, 0, 0))
     assert is_file_expired("any_file.txt")
 
     # Case 3: File does not exist

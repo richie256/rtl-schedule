@@ -55,4 +55,4 @@ def is_file_expired(path: str) -> bool:
     _LOGGER.info("current_date: " + str(current_date))
 
     delta = current_date - modification_date
-    return delta >= datetime.timedelta(hours=24)
+    return delta >= datetime.timedelta(hours=72)
