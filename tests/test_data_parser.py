@@ -250,7 +250,7 @@ def test_init_creates_dir(mock_config, mocker):
 
 @patch('transit_schedule.data_parser.config')
 @patch('transit_schedule.data_parser.is_file_expired', return_value=False)
-def test_get_stop_id_empty(mock_is_file_expired, mock_config):
+def test_get_stop_id_empty(mock_is_file_expired, mock_config, gtfs_zip_file):
     mock_config.gtfs_zip_file = GTFS_ZIP_FILE
     mock_config.gtfs_data_dir = '.'
     parser = ParseTransitData()

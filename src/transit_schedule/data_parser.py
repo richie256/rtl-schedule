@@ -54,7 +54,16 @@ class ParseTransitData:
         try:
             if force_download or not (os.path.isfile(self.file_path)) or is_file_expired(self.file_path):
                 _LOGGER.info(f"Downloading a new zip file from [{GTFS_URL}]")
-                self._download_gtfs_file(self.file_path)
+                try:
+                    self._download_gtfs_file(self.file_path)
+                except Exception as download_err:
+                    if os.path.isfile(self.file_path) and os.path.getsize(self.file_path) > 0:
+                        _LOGGER.warning(
+                            f"Failed to download GTFS zip ({download_err}). "
+                            f"Continuing with existing cached file: {self.file_path}"
+                        )
+                    else:
+                        raise
 
             with zipfile.ZipFile(self.file_path) as my_zip:
                 _LOGGER.info(f"Loading GTFS data from {self.file_path} into memory...")
@@ -101,7 +110,16 @@ class ParseTransitData:
     @staticmethod
     def _download_gtfs_file(zipfile_location) -> None:
         """ Download the GTFS file from the website, write it on disk. """
-        my_file = requests.get(GTFS_URL, allow_redirects=True, timeout=60)
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "fr,en-US;q=0.7,en;q=0.3",
+        }
+        my_file = requests.get(GTFS_URL, allow_redirects=True, timeout=60, headers=headers)
         my_file.raise_for_status()
         with open(zipfile_location, 'wb') as my_zip:
             my_zip.write(my_file.content)
