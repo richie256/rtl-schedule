@@ -130,19 +130,34 @@ class ParseTransitData:
         """ Retrieve the stop_id based on a stop_code """
         self.refresh()
 
-        if self.stops.empty:
-            _LOGGER.debug(f"Stops data is empty, cannot resolve stop_code {stop_code}")
-            return None
-            
         sc_str = str(stop_code)
-        if sc_str not in self.stops.index:
-            _LOGGER.error(f"Stop code {stop_code} not found in the GTFS data.")
+
+        if not self.stops.empty:
+            if sc_str not in self.stops.index:
+                _LOGGER.error(f"Stop code {stop_code} not found in the GTFS data.")
+                return None
+            stop_info = self.stops.loc[sc_str]
+            if isinstance(stop_info, pandas.DataFrame):
+                return str(stop_info.iloc[0]["stop_id"])
+            return str(stop_info["stop_id"])
+
+        # GTFS unavailable — fall back to Hastus scraper stop mappings (RTL only)
+        if config.transit == "RTL":
+            _LOGGER.info(f"GTFS stops unavailable, resolving stop_code {stop_code} via Hastus scraper.")
+            if not self.scraper._mappings_fetched:
+                self.scraper.fetch_stop_mappings()
+            internal_ids = self.scraper.stop_mappings.get(sc_str, [])
+            if internal_ids:
+                # Extract the numeric stop_id from the first mapping (e.g. "15:2752" → "2752")
+                id_parts = internal_ids[0].split(":", 1)
+                stop_id = id_parts[1] if len(id_parts) == 2 else internal_ids[0]
+                _LOGGER.info(f"Resolved stop_code {stop_code} → stop_id {stop_id} via Hastus scraper.")
+                return stop_id
+            _LOGGER.error(f"Stop code {stop_code} not found in Hastus scraper mappings.")
             return None
-        
-        stop_info = self.stops.loc[sc_str]
-        if isinstance(stop_info, pandas.DataFrame):
-            return str(stop_info.iloc[0]["stop_id"])
-        return str(stop_info["stop_id"])
+
+        _LOGGER.debug(f"Stops data is empty, cannot resolve stop_code {stop_code}")
+        return None
 
     def _get_service_ids(self, date: datetime.date) -> list[str]:
         """ Retrieve the service_ids for a given date, handling exceptions in calendar_dates.txt """
